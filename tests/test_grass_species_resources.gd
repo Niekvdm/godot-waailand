@@ -57,6 +57,23 @@ func test_a_species_gives_its_row() -> void:
 		and r["host_only"], "a sea host with a season")
 
 
+## A species can choose the day its library picture is drawn on (picture_day); -1 leaves the day to its first
+## decoration's mid-bloom, else the preview's default date.
+func test_the_picture_day() -> void:
+	var sp := GrassSpecies.new()
+	sp.id = &"kochia"
+	var t := _types_of(sp)
+	var growth := GrassTerrainGrowth.new("")
+	assert_true(not t.row(0).has("picture_day"), "no picture_day: none in the row")
+	assert_eq(GrassSpeciesPreview.recipe(t, DecoKinds.new("", t), growth, 0)["day"], GrassEditorPreview.DEFAULT_DAY,
+		"the preview's default date")
+	sp.picture_day = 288.0
+	assert_eq(sp.to_row_json(0).get("picture_day"), 288.0, "in the species' row")
+	t = _types_of(sp)
+	assert_eq(t.row(0).get("picture_day"), 288.0, "GrassTypes keeps it")
+	assert_eq(GrassSpeciesPreview.recipe(t, DecoKinds.new("", t), growth, 0)["day"], 288.0, "the picture is drawn on it")
+
+
 func test_a_decoration_gives_its_kind() -> void:
 	var sp := GrassSpecies.new()
 	sp.id = &"meadow"

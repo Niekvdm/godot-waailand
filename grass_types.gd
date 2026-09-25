@@ -160,6 +160,8 @@ func _parse_row(t) -> Dictionary:
 		r["height_season"] = knots
 	if t.get("invented", false):
 		r["invented"] = true
+	if t.has("picture_day"):
+		r["picture_day"] = clampf(float(t["picture_day"]), 0.0, 364.0)
 	r["bed_m"] = float(t.get("bed_m", 0.0))
 	r["path_m"] = float(t.get("path_m", 0.0))
 	r["stripe_angle_deg"] = float(t.get("stripe_angle_deg", 0.0))

@@ -13,6 +13,9 @@ extends Resource
 @export var display_name := ""
 ## Invented for the game (the hover card says so).
 @export var invented := false
+## The day of the year its library picture is drawn on (0..364); -1: its first decoration's mid-bloom, else the
+## preview's default date. For a species whose look is a season of its own (autumn colour, winter leaves).
+@export_range(-1.0, 364.0) var picture_day := -1.0
 
 @export_group("Blade")
 ## Blade height (m).
@@ -119,6 +122,8 @@ func to_row_json(p_slot: int) -> Dictionary:
 		r["host_only"] = true
 	if invented:
 		r["invented"] = true
+	if picture_day >= 0.0:
+		r["picture_day"] = picture_day
 	return r
 
 

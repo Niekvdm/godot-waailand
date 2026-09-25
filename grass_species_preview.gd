@@ -35,8 +35,9 @@ static func pictures_dir(p_id: String) -> String:
 
 ## How the species is shown: `ground` (a growth-table slot name, as the table writes it, where it grows most:
 ## the slot's allowance x the species' share of its mix; "" when none grows it), `sea_depth` (m below the sea
-## its patch stands at: its depth range's middle; NAN on land), `day` (its first decoration kind's mid-bloom, else GrassEditorPreview's default date) and `frame_h`
-## (m: its tallest part, blade or flower, for the camera).
+## its patch stands at: its depth range's middle; NAN on land), `day` (the species' picture_day, else its first
+## decoration kind's mid-bloom, else GrassEditorPreview's default date) and `frame_h` (m: its tallest part, blade or
+## flower, for the camera).
 static func recipe(types: GrassTypes, kinds: DecoKinds, growth: GrassTerrainGrowth, slot: int) -> Dictionary:
 	var row := types.row(slot)
 	var nm := String(row.get("name", ""))
@@ -49,7 +50,8 @@ static func recipe(types: GrassTypes, kinds: DecoKinds, growth: GrassTerrainGrow
 			best_w = w
 	var depth: Vector3 = row.get("depth", Vector3(-1.0, -1.0, 0.0))
 	var bd := bloom_day(kinds, slot)
-	var day := bd if bd >= 0.0 else GrassEditorPreview.DEFAULT_DAY
+	var day := float(row["picture_day"]) if row.has("picture_day") \
+		else (bd if bd >= 0.0 else GrassEditorPreview.DEFAULT_DAY)
 	var frame_h := float(row.get("height", 0.0))
 	for i in kinds.kinds.size():
 		var k: Dictionary = kinds.kinds[i]

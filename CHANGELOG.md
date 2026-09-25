@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 (2026-09-25)
+
+- `GrassSpecies.picture_day`: the day of the year a species' library picture is drawn on (a species whose look is a
+  season of its own: autumn colour, winter leaves). It is part of the picture's stamp, so a change marks it stale.
+
 ## 1.1.1 (2026-09-25)
 
 - The README's far-field instructions follow Terrain3D 1.1's shader (`mat.albedo_height`); the earlier lines did not

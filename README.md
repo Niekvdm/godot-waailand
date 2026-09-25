@@ -121,7 +121,8 @@ another species.
 
 **Pictures.** The Grass library shows each species' picture from its pack's `pictures/` folder. Select a pack in the
 FileSystem dock: the inspector lists the missing and stale pictures, and **Render missing and stale pictures**
-draws them in a separate window with the real shaders. From a shell:
+draws them in a separate window with the real shaders. A picture shows the species on its first flower's
+mid-bloom, else on 15 April; `picture_day` picks another day (autumn colour, winter leaves). From a shell:
 
 ```
 godot --path <project> res://addons/waailand/tools/render_pictures.tscn -- --pack res://path/to/pack.tres --stale
