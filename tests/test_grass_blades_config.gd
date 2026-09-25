@@ -51,19 +51,24 @@ func test_the_catalogs_and_the_bake_follow_the_config() -> void:
 	GrassBladesConfig.use(keep)
 
 
-## Pack addons: discovered by folder, sorted; the config's packs first; disabled ones left out; the starter pack only
-## when nothing else is in use; the catalog grows what resolves.
+## Pack addons: each addon folder's set (waailand_packs.tres), sorted by folder; the config's packs first, each pack
+## once; a set's packs in the set's own order; a whole set or one pack of it disabled; the starter pack only when
+## nothing else is in use; the catalog grows what resolves.
 func test_pack_addons_resolve() -> void:
 	var keep := GrassBladesConfig.current()
-	var paths := GrassBladesConfig.discovered_pack_paths(PACK_ROOT)
-	assert_eq(Array(paths), [PACK_ROOT + "/a_pack/waailand_pack.tres", PACK_ROOT + "/b_pack/waailand_pack.tres"],
-		"every folder's waailand_pack.tres, sorted; a folder without one is skipped")
+	var sets := GrassBladesConfig.discovered_set_paths(PACK_ROOT)
+	assert_eq(Array(sets), [PACK_ROOT + "/alpha/waailand_packs.tres", PACK_ROOT + "/beta/waailand_packs.tres"],
+		"every folder's waailand_packs.tres, sorted; a folder without one is skipped")
 	var c := GrassBladesConfig.new()
-	var b := load(PACK_ROOT + "/b_pack/waailand_pack.tres") as GrassSpeciesPack
+	var b := load(PACK_ROOT + "/beta/b.tres") as GrassSpeciesPack
 	c.packs = [b] as Array[GrassSpeciesPack]
-	assert_eq(c.resolved_packs(PACK_ROOT).map(func(p): return p.name), ["B", "A"], "the config's first, then the rest")
-	c.disabled_packs = PackedStringArray([PACK_ROOT + "/a_pack/waailand_pack.tres"])
-	assert_eq(c.resolved_packs(PACK_ROOT).map(func(p): return p.name), ["B"], "a disabled pack is left out")
+	assert_eq(_names(c.resolved_packs(PACK_ROOT)), ["B", "A2", "A1"],
+		"the config's first, then each set's in its own order; a pack the config lists counts once")
+	c.disabled_packs = PackedStringArray([PACK_ROOT + "/alpha/a1.tres"])
+	assert_eq(_names(c.resolved_packs(PACK_ROOT)), ["B", "A2"], "one pack of a set disabled")
+	c.packs = [] as Array[GrassSpeciesPack]
+	c.disabled_packs = PackedStringArray([PACK_ROOT + "/alpha/waailand_packs.tres"])
+	assert_eq(_names(c.resolved_packs(PACK_ROOT)), ["B"], "a whole set disabled")
 	var e := GrassBladesConfig.new()
 	var got := e.resolved_packs(PACK_ROOT + "/no_pack")
 	assert_true(got.size() == 1 and got[0].resource_path == e.starter_pack_path(), "nothing else: the starter pack")
@@ -75,3 +80,7 @@ func test_pack_addons_resolve() -> void:
 	var cat := GrassSpeciesCatalog.from_config()
 	assert_true(cat.species.size() == 5 and cat.fallback == &"meadow", "a config with no packs grows the starter pack")
 	GrassBladesConfig.use(keep)
+
+
+func _names(p_packs: Array) -> Array:
+	return p_packs.map(func(p): return p.name)

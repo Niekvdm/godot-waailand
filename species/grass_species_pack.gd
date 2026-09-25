@@ -5,7 +5,8 @@ class_name GrassSpeciesPack
 extends Resource
 ## A pack of grass species: the species, the one a forced texel or a road's
 ## verge grows where the mix can't (the fallback), and what a ground with no rule grows (the default mix). A project
-## lists its packs in GrassBladesConfig.packs, or installs one as a pack addon (res://addons/<name>/waailand_pack.tres).
+## lists its packs in GrassBladesConfig.packs, or installs them as a pack addon (a GrassPackSet at
+## res://addons/<name>/waailand_packs.tres).
 
 ## The pack's name.
 @export var name := ""

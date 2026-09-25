@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 (2026-09-25)
+
+- Pack addons are sets: an addon's `waailand_packs.tres` is a `GrassPackSet` listing one or more packs, so one addon
+  can ship several (a mega pack). It replaces the single `waailand_pack.tres`. `disabled_packs` takes a whole set's
+  path or one pack's.
+
 ## 1.0.0 (2026-09-25)
 
 The first release.

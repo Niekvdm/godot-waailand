@@ -94,12 +94,22 @@ light without grain (a bake made for other species is reported with a warning an
   verges and for a stray index), and the default mix (what a ground with no rule grows). List packs in the config's
   `packs`, or install them as pack addons (below); species ids must be unique across every pack in use.
 
-**Pack addons.** A pack can be an addon of its own: a folder in `res://addons/` with a `waailand_pack.tres` (the
-`GrassSpeciesPack`) at its root and its species, meshes and pictures beside it. Install it by dropping the folder in
-(from the Asset Library, as a copy or as a git submodule); there is no plugin to enable. The packs in use are the
-config's `packs` first, then every pack addon, sorted by folder, less the config's `disabled_packs` (their `res://`
-paths); when none is left, the starter pack, which can be disabled too. `GrassBladesConfig.resolved_packs()` returns
-them.
+**Pack addons.** Packs can ship as an addon of their own: a folder in `res://addons/` with a `waailand_packs.tres`
+at its root, a `GrassPackSet` that lists the addon's packs in order. A set holds one pack or many (a mega pack), each
+a `GrassSpeciesPack` file in its own folder with its species, meshes and `pictures/` beside it:
+
+```
+addons/coastal_grasses/
+    waailand_packs.tres         GrassPackSet: packs = [dunes/dunes.tres, salt_marsh/salt_marsh.tres]
+    dunes/dunes.tres            GrassSpeciesPack, with its species and pictures/
+    salt_marsh/salt_marsh.tres
+```
+
+Install it by dropping the folder in (from the Asset Library, as a copy or as a git submodule); there is no plugin to
+enable. The packs in use are the config's `packs` first, then each pack addon's (sorted by folder, each set's packs in
+its own order), less the config's `disabled_packs`: `res://` paths of a whole set (its `waailand_packs.tres`) or of
+single packs. When none is left, the starter pack grows; it can be disabled too. `GrassBladesConfig.resolved_packs()`
+returns them.
 
 To make a species, duplicate one, change it and add it to a pack. Each species gets a permanent slot the grass maps
 store, kept in the project's slot table (`slots_path`, written by the editor), so painted grass never turns into

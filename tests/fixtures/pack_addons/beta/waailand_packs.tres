@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="GrassPackSet" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/grass_pack_set.gd" id="1"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species_pack.gd" id="2"]
+[ext_resource type="Resource" path="res://addons/waailand/tests/fixtures/pack_addons/beta/b.tres" id="3"]
+
+[resource]
+script = ExtResource("1")
+name = "Beta"
+packs = Array[ExtResource("2")]([ExtResource("3")])

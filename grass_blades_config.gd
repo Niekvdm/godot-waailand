@@ -36,11 +36,12 @@ const SETTING := "waailand/config_path"
 ## The grass maps' folder under the terrain's data directory: one map a
 ## region, named like the region's file.
 @export var maps_folder := "grass"
-## Packs not to grow, by res:// path: one the config lists, a pack addon, or the starter pack.
+## Packs not to grow, by res:// path: one the config lists, a whole pack addon (its waailand_packs.tres), one pack of
+## a pack addon, or the starter pack.
 @export var disabled_packs := PackedStringArray()
 
-## The file a pack addon holds at its folder's root: res://addons/<name>/waailand_pack.tres.
-const PACK_FILE := "waailand_pack.tres"
+## The file a pack addon holds at its folder's root, a GrassPackSet: res://addons/<name>/waailand_packs.tres.
+const SET_FILE := "waailand_packs.tres"
 
 static var _current: GrassBladesConfig = null
 
@@ -67,23 +68,21 @@ static func use(c: GrassBladesConfig) -> void:
 	_current = c
 
 
-## The packs in use, in order: the config's `packs`, then every pack addon under `addons_dir` (sorted by path; one
-## the config already lists counts once), less `disabled_packs`. When none is left: the built-in starter pack, so a
-## project grows grass before it has species of its own.
+## The packs in use, in order: the config's `packs`, then each pack addon's set under `addons_dir` (sorted by
+## folder), its packs in the set's own order, less `disabled_packs`; a pack in use twice counts once. When none is
+## left: the built-in starter pack, so a project grows grass before it has species of its own.
 func resolved_packs(addons_dir := "res://addons") -> Array[GrassSpeciesPack]:
 	var out: Array[GrassSpeciesPack] = []
 	var seen := {}
-	for p in packs:
+	var candidates: Array[GrassSpeciesPack] = packs.duplicate()
+	for path in discovered_set_paths(addons_dir):
+		var pack_set := load(path) as GrassPackSet if not disabled_packs.has(path) else null
+		if pack_set != null:
+			candidates.append_array(pack_set.packs)
+	for p in candidates:
 		if p != null and not seen.has(_key(p)) and not disabled_packs.has(p.resource_path):
 			seen[_key(p)] = true
 			out.append(p)
-	for path in discovered_pack_paths(addons_dir):
-		if seen.has(path) or disabled_packs.has(path):
-			continue
-		var pk := load(path) as GrassSpeciesPack
-		if pk != null:
-			seen[path] = true
-			out.append(pk)
 	var starter := starter_pack_path()
 	if out.is_empty() and not disabled_packs.has(starter) and ResourceLoader.exists(starter):
 		var st := load(starter) as GrassSpeciesPack
@@ -92,13 +91,13 @@ func resolved_packs(addons_dir := "res://addons") -> Array[GrassSpeciesPack]:
 	return out
 
 
-## Every <addons_dir>/<folder>/waailand_pack.tres, sorted (ResourceLoader.list_directory, so an exported game finds
+## Every <addons_dir>/<folder>/waailand_packs.tres, sorted (ResourceLoader.list_directory, so an exported game finds
 ## them too).
-static func discovered_pack_paths(addons_dir := "res://addons") -> PackedStringArray:
+static func discovered_set_paths(addons_dir := "res://addons") -> PackedStringArray:
 	var out := PackedStringArray()
 	for d in ResourceLoader.list_directory(addons_dir):
 		if d.ends_with("/"):
-			var p := addons_dir.path_join(d.trim_suffix("/")).path_join(PACK_FILE)
+			var p := addons_dir.path_join(d.trim_suffix("/")).path_join(SET_FILE)
 			if ResourceLoader.exists(p):
 				out.append(p)
 	out.sort()
