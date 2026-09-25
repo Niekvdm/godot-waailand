@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="GrassSpecies" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/grass_decoration.gd" id="1_fs3we"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/decorations/daisy.tres" id="2_uqu0f"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species.gd" id="3_3hc3k"]
+
+[resource]
+resource_name = "daisies"
+script = ExtResource("3_3hc3k")
+id = &"daisies"
+width = 0.03
+pull = 0.5
+facing_mix = 0.3
+density = 0.6
+bend = 0.4
+profile = 1.0
+midrib = 0.3
+wind_response = 0.5
+specular = 0.25
+ground_colour = 0.6
+base_a = Color(0.06, 0.15, 0.04, 1)
+base_b = Color(0.07, 0.16, 0.045, 1)
+tip_a = Color(0.12, 0.22, 0.06, 1)
+tip_b = Color(0.14, 0.24, 0.07, 1)
+height_season = PackedVector2Array()
+decorations = Array[ExtResource("1_fs3we")]([ExtResource("2_uqu0f")])

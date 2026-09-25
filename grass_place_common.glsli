@@ -1,0 +1,507 @@
+// Copyright (c) 2026 Digitzone
+// SPDX-License-Identifier: MIT
+// grass_place_common.glsli: shared by blade_place.glsl and deco_place.glsl.
+// The bindings both kernels share (0 params, 1 types, 2 Terrain3D heights, 3 the grass maps,
+// 8 interaction field, 9 region map), the params layout (mirrored by GrassBlades._params_bytes()), and the placement
+// primitives, so blades and decorations cannot disagree about where a clump is or which
+// type grows where. Kernel-specific bindings (4-7) and push constants stay in each kernel.
+// Included, not imported: the .glsli extension keeps Godot's shader importer off it.
+
+layout(set = 0, binding = 0, std430) restrict readonly buffer Params { vec4 v[]; } P;
+layout(set = 0, binding = 1, std430) restrict readonly buffer Types { vec4 v[]; } T;
+layout(set = 0, binding = 2) uniform sampler2DArray height_maps;   // Terrain3D: R32F heights
+layout(set = 0, binding = 3) uniform sampler2DArray grass_maps;    // the grass maps (GrassMaps): RGBA8
+layout(set = 0, binding = 8, rgba16f) uniform restrict readonly image2D field;
+layout(set = 0, binding = 9, std430) restrict readonly buffer RegionMap { int m[]; } RM;   // Terrain3D region map
+layout(set = 0, binding = 10, std430) restrict readonly buffer RoadIds { uint v[]; } RI;         // GrassRoads: bin offsets, ids
+layout(set = 0, binding = 11, std430) restrict readonly buffer RoadShapes { vec4 v[]; } RSH;     // GrassRoads: shapes, vertices
+layout(set = 0, binding = 12) uniform sampler2D rut_map;              // set_ruts: R depression (m)
+layout(set = 0, binding = 13) uniform sampler2DArray control_maps;   // Terrain3D control words (R32F bits): what the terrain is painted with
+
+// Params, mirrored by GrassBlades._params_bytes(): keep the two in step.
+#define CAM            P.v[0].xyz
+#define PITCH          P.v[0].w
+// P.v[1..6] = frustum planes (n.xyz, w): inside when dot(n, p) + w >= -r
+#define R_MAX          P.v[7].x
+#define EDGE_FADE      P.v[7].y
+#define D_MORPH        P.v[7].z
+#define D_SWITCH       P.v[7].w
+#define K_LO           P.v[8].x
+#define WIDTH_EXP      P.v[8].y
+#define GROW_M         P.v[8].z
+#define SHADOW_MARGIN  P.v[8].w
+#define T_REGION_SIZE  int(P.v[9].x)       // Terrain3D region_size (vertices per region side)
+#define T_SPACING      P.v[9].y            // vertex_spacing (m)
+#define T_MAP_SIZE     int(P.v[9].z)       // region map side (32)
+#define T_MAP_ORIGIN   ivec2(P.v[10].xy)   // region map window origin (0 unless the Terrain3D build slides it)
+#define F_ORIGIN       ivec2(P.v[11].xy)
+#define F_TEXEL        P.v[11].z
+#define F_SIZE         int(P.v[11].w)
+#define CAP_HI         uint(P.v[12].x)
+#define CAP_LO         uint(P.v[12].y)
+#define CAP_SH         uint(P.v[12].z)
+#define FLAGS          uint(P.v[12].w)
+#define FORCE_BIN      int(P.v[13].x)
+#define FORCE_MORPH    P.v[13].y
+#define SHADOW_RADIUS  P.v[13].z
+#define SHADOW_KEEP    P.v[13].w
+#define MAX_SLOPE_COS  P.v[14].x
+#define ROOT_SINK      P.v[14].y
+#define FORCE_YAW      P.v[14].z
+#define K_FAR          P.v[14].w
+#define DF0            P.v[15].x
+#define DF1            P.v[15].y
+#define WIDTH_CAP      P.v[15].z
+#define ROAD_ORIGIN    P.v[16].xy
+#define ROAD_BIN_M     P.v[16].z
+#define ROAD_BINS      int(P.v[16].w)      // 0: no roads bound
+#define ROAD_MARGIN    P.v[17].x
+#define VERGE_MIN      P.v[17].y
+#define VERGE_MAX      P.v[17].z
+#define RUT_ORIGIN     P.v[18].xy
+#define RUT_SIZE       P.v[18].z
+#define RUT_FULL       P.v[18].w
+#define RUT_ON         (P.v[19].x > 0.5)
+#define TYPE_STRIPES   128                 // T.v[128 + type]: bed_m, path_m, stripe angle deg (GrassTypes.SLOTS 32)
+#define FALLBACK_TYPE  int(P.v[10].z)     // GrassTypes.fallback_slot: a stray index, a forced texel the mix can't grow, a road's verge
+
+#define FLAG_FRUSTUM    1u
+#define FLAG_CLUMPING   2u
+#define FLAG_SHADOW_BIN 4u
+#define FLAG_ALL_GROUNDS 8u   // the editor preview: every ground grows (GrassEditorPreview.all_grounds)
+
+#define TAU 6.28318530718
+
+// Independent hash streams keyed on an integer cell (pcg3d, Jarzynski & Olano 2020).
+uvec3 pcg3d(uvec3 v) {
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+	v ^= v >> 16u;
+	v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+	return v;
+}
+
+vec3 rnd3(ivec2 c, uint stream) {
+	uvec3 h = pcg3d(uvec3(uint(c.x), uint(c.y), stream));
+	return vec3(h >> 8u) * (1.0 / 16777216.0);
+}
+
+#define NAN_F uintBitsToFloat(0x7fc00000u)   // a quiet NaN (a global const may not call functions)
+const ivec2 CORNER[4] = ivec2[4](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 1));
+
+// Terrain3D's region lookup (its shader's get_index_coord, on integer vertices): the array
+// texel holding vertex v, z = layer, or -1 where no region is loaded.
+ivec3 vertex_texel(ivec2 v) {
+	ivec2 loc = ivec2(floor(vec2(v) / float(T_REGION_SIZE)));
+	ivec2 p = loc - T_MAP_ORIGIN + T_MAP_SIZE / 2;
+	if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, ivec2(T_MAP_SIZE)))) {
+		return ivec3(0, 0, -1);
+	}
+	return ivec3(v - loc * T_REGION_SIZE, RM.m[p.y * T_MAP_SIZE + p.x] - 1);
+}
+
+// Ground height: bilinear between the 4 vertices around xz (Terrain3DData.get_height's rule). NaN
+// where a corner's region is not loaded.
+float ground_h(vec2 xz) {
+	vec2 g = xz / T_SPACING;
+	ivec2 v0 = ivec2(floor(g));
+	vec2 f = g - vec2(v0);
+	float h[4];
+	for (int i = 0; i < 4; i++) {
+		ivec3 c = vertex_texel(v0 + CORNER[i]);
+		if (c.z < 0) {
+			return NAN_F;
+		}
+		h[i] = texelFetch(height_maps, c, 0).r;
+	}
+	return mix(mix(h[0], h[1], f.x), mix(h[2], h[3], f.x), f.y);
+}
+
+vec3 ground_n(vec2 xz) {
+	float s = T_SPACING;
+	float h = ground_h(xz);
+	vec3 n = normalize(vec3(h - ground_h(xz + vec2(s, 0.0)), s, h - ground_h(xz + vec2(0.0, s))));
+	return any(isnan(n)) ? vec3(0.0, 1.0, 0.0) : n;
+}
+
+// Inverse of smoothstep's cubic y = 3s^2 - 2s^3 on [0, 1].
+float inv_smooth(float y) {
+	return 0.5 - sin(asin(1.0 - 2.0 * clamp(y, 0.0, 1.0)) / 3.0);
+}
+
+// Two 0..1 values as exact integers in one float (survives COLOR's multiply by 1.0).
+float pack2(float a, float b) {
+	return floor(clamp(a, 0.0, 1.0) * 1023.0 + 0.5) * 1024.0 + floor(clamp(b, 0.0, 1.0) * 1023.0 + 0.5);
+}
+
+bool in_frustum(vec3 c, float r) {
+	for (int i = 0; i < 6; i++) {
+		vec4 pl = P.v[1 + i];
+		if (dot(pl.xyz, c) + pl.w < -r) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The terrain's growth allowance for texture id i (GrassTerrainGrowth, the growth table):
+// 32 floats after the 32 type rows and their bed stripes: T.v[160..167].
+#define ALLOW(i) T.v[160 + (i) / 4][(i) % 4]
+// Each texture id's species mix (GrassTerrainGrowth.mix_bytes): MIX_VEC4 vec4 per id from T.v[168]:
+// 3 x (type, cumulative weight, type, cumulative weight), the band's 3, then (band above m, has band).
+#define MIX_BASE 168
+#define MIX_VEC4 7
+#define SPECIES_PATCH_M P.v[19].y          // the species patches' size (GrassBlades.species_patch_m)
+#define SEA_LEVEL       P.v[19].z          // GrassBlades.sea_level (set_sea)
+#define SEA_ON          (P.v[19].w > 0.5)  // no sea: every depth is dry land
+#define DEPTH_BASE      392                // T.v[392 + type]: (min, max, feather, 0), GrassTypes.depth_table
+#define BAND_SOFT_M     20.0               // an elevation band's edge wanders this much (m, total)
+
+// A type's eligibility d m below the sea (GrassTypes.eligibility, mirrored): 0 outside its depth range,
+// 1 inside, fading over the last feather at each end.
+float type_eligibility(int ty, float d) {
+	vec4 r = T.v[DEPTH_BASE + ty];
+	if (d < r.x || d > r.y) {
+		return 0.0;
+	}
+	return smoothstep(r.x, r.x + r.z, d) * (1.0 - smoothstep(r.y - r.z, r.y, d));
+}
+
+// The slot's mix at elevation h and depth d, sampled at u01 against weight x eligibility, renormalised
+// over the mix; best = the mix's best eligibility (the density multiplier). -1: nothing may grow.
+int mix_pick(int slot, float h, float d, float u01, out float best) {
+	vec4 hdr = T.v[MIX_BASE + slot * MIX_VEC4 + 6];
+	int o = MIX_BASE + slot * MIX_VEC4 + ((hdr.y > 0.5 && h > hdr.x) ? 3 : 0);
+	float tot = 0.0;
+	float prev = 0.0;
+	best = 0.0;
+	for (int i = 0; i < 6; i++) {
+		vec4 p = T.v[o + i / 2];
+		vec2 pr = (i % 2 == 0) ? p.xy : p.zw;
+		if (pr.x < 0.0) {
+			break;
+		}
+		float e = type_eligibility(int(pr.x), d);
+		tot += (pr.y - prev) * e;
+		best = max(best, e);
+		prev = pr.y;
+	}
+	if (tot <= 0.0) {
+		return -1;
+	}
+	float want = u01 * tot;
+	float acc = 0.0;
+	int last = -1;
+	prev = 0.0;
+	for (int i = 0; i < 6; i++) {
+		vec4 p = T.v[o + i / 2];
+		vec2 pr = (i % 2 == 0) ? p.xy : p.zw;
+		if (pr.x < 0.0) {
+			break;
+		}
+		float e = type_eligibility(int(pr.x), d);
+		acc += (pr.y - prev) * e;
+		prev = pr.y;
+		if (e > 0.0) {
+			last = int(pr.x);
+			if (want < acc) {
+				return last;
+			}
+		}
+	}
+	return last;
+}
+
+// Patches of one species a few metres across: the value (uniform 0..1, one field per texture slot) of
+// the nearest of the 9 jittered sites of the SPECIES_PATCH_M cells around pos. Voronoi patches, so a
+// mix's weights are its AREA shares. (Value noise would not do: its values bunch toward 0.5.)
+float species_patch(vec2 pos, int slot) {
+	float cs = SPECIES_PATCH_M;
+	ivec2 base = ivec2(floor(pos / cs));
+	float best = 1e9;
+	ivec2 cid = base;
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			ivec2 k = base + ivec2(x, y);
+			vec2 pt = (vec2(k) + rnd3(k, 41u).xy) * cs;
+			float dd = dot(pt - pos, pt - pos);
+			if (dd < best) {
+				best = dd;
+				cid = k;
+			}
+		}
+	}
+	return rnd3(cid, 64u + uint(slot)).x;
+}
+
+// A corner's allowance: its control word's (mix(base, overlay, blend), as Terrain3D decodes it). It is 1 at a
+// painted override (G > 0) wherever the ground allows any grass: a painted override PLANTS (flower beds painted
+// on tilled farmland grow). Where the ground forbids grass (roads, sand, rock) it is 0, unless the corner is
+// FORCED (A < 128) or the preview grows every ground: then 1. A "painted only" surface (a ground rule) comes
+// as -a: its own grass reads max(a, 0) = 0, a painted override |a|.
+float corner_allow(uint cw, vec4 gt) {
+	if (gt.a < 0.5 || (FLAGS & FLAG_ALL_GROUNDS) != 0u) {
+		return 1.0;
+	}
+	float ab = ALLOW(int(cw >> 27u & 0x1Fu));
+	float ao = ALLOW(int(cw >> 22u & 0x1Fu));
+	float bl = float(cw >> 14u & 0xFFu) * (1.0 / 255.0);
+	if (gt.g > 0.5 / 255.0 && mix(abs(ab), abs(ao), bl) > 0.0) {
+		return 1.0;
+	}
+	return mix(max(ab, 0.0), max(ao, 0.0), bl);
+}
+
+// The ground's allowance at pos, bilinear over the 4 corners (0 where a region is not loaded). The
+// kernels judge it again at the FINAL root: the clump pull can carry a root across a slot's edge onto
+// ground that grows nothing (a blade on the asphalt), so it is judged there, as roads and bed paths are.
+float ground_allowance(vec2 pos) {
+	vec2 g = pos / T_SPACING;
+	ivec2 v0 = ivec2(floor(g));
+	vec2 f = g - vec2(v0);
+	vec4 a;
+	for (int i = 0; i < 4; i++) {
+		ivec3 t = vertex_texel(v0 + CORNER[i]);
+		if (t.z < 0) {
+			return 0.0;
+		}
+		a[i] = corner_allow(floatBitsToUint(texelFetch(control_maps, t, 0).r), texelFetch(grass_maps, t, 0));
+	}
+	return dot(a, vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y));
+}
+
+// The grass map at pos (GrassMapCodec: R density multiplier x 128, G species override + 1, B height
+// scale) over the ground table. pl.r = bilinear allowance (1 at a painted override where the ground
+// allows any grass) x bilinear R/128 (may exceed 1), pl.b the height scale; ty: one corner picked by
+// position (gather and pick: a type is an INDEX, never filtered), its override, else a species of its
+// texture slot's mix at a patch value and the elevation. The corner, and then its base or overlay slot, are
+// picked in proportion to the GROWTH each contributes (bilinear weight x allowance; blend x allowance):
+// a slot that grows nothing (a gravel overlay, the asphalt across an edge) never lends its species to
+// the blades its neighbour grows. False where a corner's region is not loaded.
+bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
+	vec2 g = pos / T_SPACING;
+	ivec2 v0 = ivec2(floor(g));
+	vec2 f = g - vec2(v0);
+	vec4 c[4];
+	uint cw[4];
+	float a[4];
+	float hs[4];
+	for (int i = 0; i < 4; i++) {
+		ivec3 t = vertex_texel(v0 + CORNER[i]);
+		if (t.z < 0) {
+			pl = vec4(0.0);
+			ty = 0;
+			return false;
+		}
+		c[i] = texelFetch(grass_maps, t, 0);
+		cw[i] = floatBitsToUint(texelFetch(control_maps, t, 0).r);
+		a[i] = corner_allow(cw[i], c[i]);
+		hs[i] = texelFetch(height_maps, t, 0).r;
+	}
+	// The ground height here (ground_h's bilinear, on the texels already fetched) and the depth below the
+	// sea: the species know their depth.
+	float gh = mix(mix(hs[0], hs[1], f.x), mix(hs[2], hs[3], f.x), f.y);
+	float depth = SEA_ON ? SEA_LEVEL - gh : -100.0;     // no sea: dry land (not the land range's own -1e4 edge)
+	vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
+	vec4 wa = w * vec4(a[0], a[1], a[2], a[3]);
+	float total = wa.x + wa.y + wa.z + wa.w;
+	pl.r *= (255.0 / 128.0) * total;
+	if (total <= 0.0) {
+		ty = FALLBACK_TYPE;
+		return true;          // nothing grows here: pl.r is 0
+	}
+	float uk = u * total;
+	int k = 3;
+	if (uk < wa.x) {
+		k = 0;
+	} else if (uk < wa.x + wa.y) {
+		k = 1;
+	} else if (uk < wa.x + wa.y + wa.z) {
+		k = 2;
+	}
+	int ov = int(c[k].g * 255.0 + 0.5) - 1;
+	if (ov >= 0) {
+		ty = min(ov, 31);
+		pl.r *= type_eligibility(ty, depth);     // a painted land type under water grows nothing
+		return true;
+	}
+	// The ground decides. A hash of the position (not the caller's streams): a blade and a decoration
+	// at one spot agree on the species.
+	vec3 hp = rnd3(ivec2(floor(pos * 64.0)), 13u);
+	uint cwk = cw[k];
+	int sb = int(cwk >> 27u & 0x1Fu);
+	int so = int(cwk >> 22u & 0x1Fu);
+	float bl = float(cwk >> 14u & 0xFFu) * (1.0 / 255.0);
+	// A forced corner weighs a painted-only surface by |a| (it grows that surface's mix); an unforced one by its own
+	// grass, max(a, 0).
+	bool fk = c[k].a < 0.5 || (FLAGS & FLAG_ALL_GROUNDS) != 0u;
+	float gb = (1.0 - bl) * (fk ? abs(ALLOW(sb)) : max(ALLOW(sb), 0.0));
+	float go = bl * (fk ? abs(ALLOW(so)) : max(ALLOW(so), 0.0));
+	int slot = hp.z * (gb + go) < go ? so : sb;
+	float h = gh + (rnd3(ivec2(floor(pos * 64.0)), 14u).x - 0.5) * BAND_SOFT_M;
+	vec2 jit = (hp.xy - 0.5) * SPECIES_PATCH_M * 0.35;       // ragged patch edges
+	float best;
+	ty = mix_pick(slot, h, depth, species_patch(pos + jit, slot), best);
+	if (ty < 0 && fk) {
+		ty = FALLBACK_TYPE;   // forced where the ground's mix can't grow at this depth: the fallback, where IT may
+		best = type_eligibility(FALLBACK_TYPE, depth);
+	}
+	pl.r *= best;
+	if (ty < 0) {
+		ty = FALLBACK_TYPE;
+		pl.r = 0.0;
+	}
+	return true;
+}
+
+// Smooth 2D value noise from the cell hash (stream 31): varies the verge width.
+float value_noise(vec2 p) {
+	ivec2 i = ivec2(floor(p));
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = rnd3(i, 31u).x;
+	float b = rnd3(i + ivec2(1, 0), 31u).x;
+	float c = rnd3(i + ivec2(0, 1), 31u).x;
+	float d = rnd3(i + ivec2(1, 1), 31u).x;
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// GrassRoads.classify, mirrored over this bin's shapes: 0 open, 1 verge, 2 road.
+int road_class(vec2 p, float margin, float verge_reach) {
+	if (ROAD_BINS <= 0) {
+		return 0;
+	}
+	ivec2 b = ivec2(floor((p - ROAD_ORIGIN) / ROAD_BIN_M));
+	if (any(lessThan(b, ivec2(0))) || any(greaterThanEqual(b, ivec2(ROAD_BINS)))) {
+		return 0;
+	}
+	uint bi = uint(b.y * ROAD_BINS + b.x);
+	uint base = uint(ROAD_BINS * ROAD_BINS + 1);
+	int res = 0;
+	for (uint k = RI.v[bi]; k < RI.v[bi + 1u]; k++) {
+		uint id = RI.v[base + k];
+		vec4 a = RSH.v[id * 2u];
+		vec4 m = RSH.v[id * 2u + 1u];
+		if (m.z < 0.5) {
+			vec2 ab = a.zw - a.xy;
+			vec2 ap = p - a.xy;
+			float l2 = dot(ab, ab);
+			float t = l2 > 1e-6 ? dot(ap, ab) / l2 : 0.0;
+			uint fl = uint(m.y + 0.5);
+			if ((t < 0.0 && (fl & 2u) != 0u) || (t > 1.0 && (fl & 4u) != 0u)) {
+				continue;
+			}
+			t = clamp(t, 0.0, 1.0);
+			vec2 d = ap - ab * t;
+			float d2 = dot(d, d);
+			float edge = m.x + margin;
+			if (d2 < edge * edge) {
+				return 2;
+			}
+			float far_e = edge + verge_reach;
+			if ((fl & 1u) != 0u && d2 < far_e * far_e) {
+				res = 1;
+			}
+		} else {
+			uint v0 = uint(a.x + 0.5);
+			uint n = uint(a.y + 0.5);
+			bool inside = false;
+			uint j = n - 1u;
+			for (uint i = 0u; i < n; i++) {
+				vec2 vi = RSH.v[v0 + i].xy;
+				vec2 vj = RSH.v[v0 + j].xy;
+				if ((vi.y > p.y) != (vj.y > p.y) && p.x < (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x) {
+					inside = !inside;
+				}
+				j = i;
+			}
+			if (inside) {
+				return 2;
+			}
+		}
+	}
+	return res;
+}
+
+// What the grass map says, after the live roads and the type's bed stripes. False: nothing grows.
+bool ground_rule(vec2 pos, inout int ty, inout float dens) {
+	float reach = mix(VERGE_MIN, VERGE_MAX, value_noise(pos * 0.05));
+	int rc = road_class(pos, ROAD_MARGIN, reach);
+	if (rc == 2) {
+		return false;
+	}
+	if (rc == 1 && dens > 0.0) {
+		ty = FALLBACK_TYPE;
+		dens = max(dens, 0.85);
+	}
+	vec4 e = T.v[TYPE_STRIPES + ty];
+	if (e.x > 0.0) {
+		float ang = radians(e.z);
+		float z = -sin(ang) * pos.x + cos(ang) * pos.y;
+		if (mod(z, e.x + e.y) >= e.x) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The Voronoi clump around pos: the nearest of the 9 jittered sites (stream 7) of the
+// cs-sized cells around it. Returns the squared distance; the site and its cell out.
+float clump_nearest(vec2 pos, float cs, out vec2 centre, out ivec2 cid) {
+	ivec2 base = ivec2(floor(pos / cs));
+	float best = 1e9;
+	centre = pos;
+	cid = base;
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			ivec2 k = base + ivec2(x, y);
+			vec2 pt = (vec2(k) + rnd3(k, 7u).xy) * cs;
+			float dd = dot(pt - pos, pt - pos);
+			if (dd < best) {
+				best = dd;
+				centre = pt;
+				cid = k;
+			}
+		}
+	}
+	return best;
+}
+
+// The interaction field at pos: zero outside the camera-centred window.
+vec4 field_raw(vec2 pos) {
+	ivec2 fi = ivec2(floor(pos / F_TEXEL));
+	ivec2 rel = fi - F_ORIGIN;
+	if (all(greaterThanEqual(rel, ivec2(0))) && all(lessThan(rel, ivec2(F_SIZE)))) {
+		// GLSL % on negative ints is undefined; this is the positive modulo.
+		ivec2 wrap = fi - F_SIZE * ivec2(floor(vec2(fi) / float(F_SIZE)));
+		return imageLoad(field, wrap);
+	}
+	return vec4(0.0);
+}
+
+// The trail (lay.xy, crush, push) with the ruts merged in: a rut's depth (set_ruts) crushes like a
+// wheel track; the larger crush wins and brings its lay (the rut's downhill gradient).
+vec4 field_at(vec2 pos) {
+	vec4 iv = field_raw(pos);
+	if (!RUT_ON) {
+		return iv;
+	}
+	vec2 ruv = (pos - RUT_ORIGIN) / RUT_SIZE;
+	if (any(lessThanEqual(ruv, vec2(0.0))) || any(greaterThanEqual(ruv, vec2(1.0)))) {
+		return iv;
+	}
+	vec4 rut = textureLod(rut_map, ruv, 0.0);
+	if (max(rut.r, rut.g) >= 0.9) {
+		return iv;     // a spike in the rut map, not a rut
+	}
+	float crush = clamp(rut.r / RUT_FULL, 0.0, 1.0);
+	if (crush <= iv.b) {
+		return iv;
+	}
+	float t = 1.0 / RUT_SIZE;
+	vec2 lay = -vec2(textureLod(rut_map, ruv + vec2(t, 0.0), 0.0).r - textureLod(rut_map, ruv - vec2(t, 0.0), 0.0).r,
+		textureLod(rut_map, ruv + vec2(0.0, t), 0.0).r - textureLod(rut_map, ruv - vec2(0.0, t), 0.0).r);
+	float l = length(lay);
+	return vec4(l > 1e-6 ? lay / l : vec2(0.0), crush, iv.a);
+}

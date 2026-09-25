@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b6khw6hjc64al"
+path="res://.godot/imported/interaction_stamp.glsl-fc8e9d544b11c528fc8af5d95c4552a1.res"
+
+[deps]
+
+source_file="res://addons/waailand/interaction_stamp.glsl"
+dest_files=["res://.godot/imported/interaction_stamp.glsl-fc8e9d544b11c528fc8af5d95c4552a1.res"]
+
+[params]
+

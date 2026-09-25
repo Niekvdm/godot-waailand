@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="GrassSpeciesPack" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species_pack.gd" id="1_pkogj"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species.gd" id="2_kthsn"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/lawn.tres" id="3_yuait"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/meadow.tres" id="4_0d4y2"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/tall_grass.tres" id="5_f1qbg"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/tufts.tres" id="6_76sfj"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/daisies.tres" id="7_4og3b"]
+
+[resource]
+script = ExtResource("1_pkogj")
+name = "Starter"
+species = Array[ExtResource("2_kthsn")]([ExtResource("3_yuait"), ExtResource("4_0d4y2"), ExtResource("5_f1qbg"), ExtResource("6_76sfj"), ExtResource("7_4og3b")])
+fallback_species = &"meadow"
+default_mix = {
+"lawn": 0.4,
+"meadow": 0.6
+}

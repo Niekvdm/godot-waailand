@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://du6aqupowskr2"
+path="res://.godot/imported/deco_place.glsl-d317fd2367d22d32b60317a3e1f32767.res"
+
+[deps]
+
+source_file="res://addons/waailand/deco_place.glsl"
+dest_files=["res://.godot/imported/deco_place.glsl-d317fd2367d22d32b60317a3e1f32767.res"]
+
+[params]
+

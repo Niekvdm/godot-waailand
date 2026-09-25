@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="GrassSpecies" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/grass_decoration.gd" id="1_ra8gc"]
+[ext_resource type="Resource" path="res://addons/waailand/packs/starter/decorations/tall_grass_plume.tres" id="2_wm6u0"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species.gd" id="3_jn5r0"]
+
+[resource]
+resource_name = "tall_grass"
+script = ExtResource("3_jn5r0")
+id = &"tall_grass"
+height = 0.9
+height_jitter = 0.35
+width = 0.02
+clump_cell = 0.8
+pull = 0.45
+facing_mix = 0.6
+density = 0.5
+tilt = 0.7
+bend = 0.8
+taper_pow = 1.7
+midrib = 0.4
+wind_response = 0.8
+specular = 0.4
+ground_colour = 0.4
+base_a = Color(0.08, 0.16, 0.05, 1)
+base_b = Color(0.09, 0.17, 0.06, 1)
+tip_a = Color(0.2, 0.25, 0.1, 1)
+tip_b = Color(0.25, 0.27, 0.13, 1)
+height_season = PackedVector2Array()
+decorations = Array[ExtResource("1_ra8gc")]([ExtResource("2_wm6u0")])

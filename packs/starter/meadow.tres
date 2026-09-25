@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="GrassSpecies" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/grass_decoration.gd" id="1_jr04v"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_species.gd" id="2_ah4lf"]
+
+[resource]
+resource_name = "meadow"
+script = ExtResource("2_ah4lf")
+id = &"meadow"
+height = 0.45
+height_jitter = 0.4
+width = 0.02
+clump_cell = 0.6
+pull = 0.3
+facing_mix = 0.5
+tilt = 0.6
+bend = 0.5
+taper_pow = 2.2
+wind_response = 0.9
+specular = 0.35
+ground_colour = 0.6
+base_a = Color(0.07, 0.17, 0.035, 1)
+base_b = Color(0.08, 0.18, 0.04, 1)
+tip_a = Color(0.2, 0.27, 0.07, 1)
+tip_b = Color(0.24, 0.29, 0.09, 1)
+height_season = PackedVector2Array()

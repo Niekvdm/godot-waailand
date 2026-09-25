@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bexrcjm8wa47c"
+path="res://.godot/imported/blade_finalize.glsl-63ac0aebf6c215c2c7e6f088e8671cce.res"
+
+[deps]
+
+source_file="res://addons/waailand/blade_finalize.glsl"
+dest_files=["res://.godot/imported/blade_finalize.glsl-63ac0aebf6c215c2c7e6f088e8671cce.res"]
+
+[params]
+

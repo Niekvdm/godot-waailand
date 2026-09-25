@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c4n28dh4r3a0"
+path="res://.godot/imported/blade_place.glsl-883e63263ab00252c7e6627da0e7771b.res"
+
+[deps]
+
+source_file="res://addons/waailand/blade_place.glsl"
+dest_files=["res://.godot/imported/blade_place.glsl-883e63263ab00252c7e6627da0e7771b.res"]
+
+[params]
+

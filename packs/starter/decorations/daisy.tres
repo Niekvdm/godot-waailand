@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="GrassDecoration" format=3]
+
+[ext_resource type="Script" path="res://addons/waailand/species/builders/isogiku_mesh_builder.gd" id="1_sghfi"]
+[ext_resource type="Script" path="res://addons/waailand/species/grass_decoration.gd" id="2_5bq0w"]
+
+[sub_resource type="Resource" id="Resource_57rp2"]
+script = ExtResource("1_sghfi")
+heads = 4
+stalk_h = 0.18
+spread = 0.08
+head_r = 0.014
+sides = 8
+
+[resource]
+resource_name = "daisy"
+script = ExtResource("2_5bq0w")
+name = &"daisy"
+spacing = 0.25
+density = 0.8
+radius = 35.0
+d_full = 12.0
+k_edge = 0.15
+d_switch = 8.0
+scale = Vector2(0.8, 1.1)
+bloom = PackedVector2Array(4, 20, 5, 10, 7, 31, 9, 10)
+palette = Array[PackedColorArray]([PackedColorArray(0.55, 0.6, 0.35, 1, 0.97, 0.97, 0.94, 1, 0.6, 0.55, 0.4, 1)])
+stem = Color(0.3, 0.4, 0.25, 1)
+centre = Color(0.95, 0.78, 0.1, 1)
+cap = Vector2i(32768, 32768)
+handoff_vis = 0.65
+mesh_builder = SubResource("Resource_57rp2")
