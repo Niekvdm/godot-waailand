@@ -76,6 +76,7 @@ func test_pack_addons_resolve() -> void:
 	assert_eq(e.resolved_packs(PACK_ROOT + "/no_pack").size(), 0, "the starter pack can be disabled too")
 	var bare := GrassBladesConfig.new()
 	bare.slots_path = ""
+	bare.disabled_packs = GrassBladesConfig.discovered_set_paths()   # whatever pack addons this project has
 	GrassBladesConfig.use(bare)
 	var cat := GrassSpeciesCatalog.from_config()
 	assert_true(cat.species.size() == 5 and cat.fallback == &"meadow", "a config with no packs grows the starter pack")

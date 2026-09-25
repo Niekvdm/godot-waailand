@@ -34,9 +34,9 @@ func assert_near(a: float, b: float, tol: float, what: String) -> void:
 
 
 ## The addon's test species in use until the returned config is given back to GrassBladesConfig.use(): one pack built
-## from the catalog fixtures (tests/fixtures: twenty species and sixteen decorations, as JSON), on their own slots, verge
-## the fallback, verge 0.6 and pasture 0.4 the default mix, no growth table. For suites that test the addon on real
-## species and must pass in any project, whatever its packs.
+## from the catalog fixtures (tests/fixtures: twenty species and sixteen decorations, as JSON), on their own slots,
+## verge the fallback, verge 0.6 and pasture 0.4 the default mix, no growth table, and none of the project's pack
+## addons. For suites that test the addon on real species and must pass in any project, whatever its packs.
 static func use_fixture_species() -> GrassBladesConfig:
 	var keep := GrassBladesConfig.current()
 	var cfg := GrassBladesConfig.new()
@@ -46,6 +46,7 @@ static func use_fixture_species() -> GrassBladesConfig:
 	var packs: Array[GrassSpeciesPack] = [pack]
 	cfg.packs = packs
 	cfg.slots_path = ""
+	cfg.disabled_packs = GrassBladesConfig.discovered_set_paths()   # the project's pack addons stay out of the fixtures
 	GrassBladesConfig.use(cfg)
 	return keep
 

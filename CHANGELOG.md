@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 (2026-09-25)
+
+- The README's far-field instructions follow Terrain3D 1.1's shader (`mat.albedo_height`); the earlier lines did not
+  compile there.
+- The addon's tests leave out whatever pack addons the project has installed, and the camera test turns physics
+  interpolation on for itself instead of asking the project for it.
+
 ## 1.1.0 (2026-09-25)
 
 - Pack addons are sets: an addon's `waailand_packs.tres` is a `GrassPackSet` listing one or more packs, so one addon

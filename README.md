@@ -46,34 +46,38 @@ pack's default mix: meadow and lawn, 60 to 40.
 
 ## The far field in your terrain shader
 
-Past the blades, the terrain shader draws the carpet: its measured brightness, its grain and the canopy's light, on
-the terrain texture's own colour. This needs three additions to a shader made from Terrain3D's (Terrain3D material,
-Shader Override); without them the blades still grow and only the carpet past them is missing.
+Past the blades, the terrain shader draws the carpet: its measured brightness, its grain and the canopy's light, on the
+terrain texture's own colour. This needs three additions to a shader made from Terrain3D's (Terrain3D material, enable
+Shader Override with an empty shader: Terrain3D fills it with its default code); without them the blades still grow and
+only the carpet past them is missing. The lines below are for Terrain3D 1.1.
 
-Above the functions, include the wind and the far field:
+Above `void vertex()`, include the wind and the far field:
 
 ```glsl
 #include "res://addons/waailand/grass_wind.gdshaderinc"
 #include "res://addons/waailand/grass_far.gdshaderinc"
 ```
 
-In `fragment()`, keep the bilinear weights before the height blend reassigns them:
+In `fragment()`, right after the statement `vec4 weights = vec4(...);`, keep the bilinear weights:
 
 ```glsl
-vec4 grass_w = weights;   // the grass far field's bilinear weights (weights is reassigned below)
+vec4 grass_w = weights;   // the grass far field's bilinear weights
 ```
 
-Then, before `ALBEDO` is written, let the far field scale the albedo and add its glow:
+Then replace the line `ALBEDO = mat.albedo_height.rgb * color_map.rgb;` with:
 
 ```glsl
 vec3 grass_glow = vec3(0.0);
 if (grass_far_enabled) {
-	albedo_height.rgb = grass_far_apply(index[0], index[1], index[2], index[3], grass_w, v_vertex,
-		v_camera_pos, VIEW, VIEW_MATRIX, NORMAL, albedo_height.rgb, grass_glow);
+	mat.albedo_height.rgb = grass_far_apply(index[0], index[1], index[2], index[3], grass_w, v_vertex,
+		v_camera_pos, VIEW, VIEW_MATRIX, NORMAL, mat.albedo_height.rgb, grass_glow);
 }
-// ... ALBEDO = ...
+ALBEDO = mat.albedo_height.rgb * color_map.rgb;
 BACKLIGHT = grass_glow;
 ```
+
+Terrain3D before 1.1 writes the albedo into a local `albedo_height` and reassigns `weights` in its height blend: use
+`albedo_height` where these lines say `mat.albedo_height`, and take `grass_w` before the blend.
 
 `GrassBlades` switches `grass_far_enabled` on while it runs (its `far_field` export) and feeds every uniform.
 

@@ -15,7 +15,8 @@ static func run() -> Dictionary:
 
 func test_params_measure_from_the_drawn_camera() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
-	assert_true(tree.physics_interpolation, "the project interpolates physics (the case this pins)")
+	var was := tree.physics_interpolation
+	tree.physics_interpolation = true                   # the case this pins, whatever the project's setting
 	var cam := Camera3D.new()
 	tree.root.add_child(cam)
 	var checked := 0
@@ -48,3 +49,4 @@ func test_params_measure_from_the_drawn_camera() -> void:
 	print("  view: %d interpolated frames checked, physics transform led by up to %.3f m" % [checked, worst_lead])
 	assert_true(checked >= 3, "frames drew the camera between ticks (%d)" % checked)
 	cam.queue_free()
+	tree.physics_interpolation = was
