@@ -143,13 +143,10 @@ func _band(b, what: String, known: Dictionary) -> Dictionary:
 	return {"above_m": float(b["above_m"]), "species": sp}
 
 
-## Each species' layer by name (GrassTypes.LAYER_*).
+## Each INSTALLED species' layer by name (GrassTypes.LAYER_*): rules keep a species that is not active (no slot), so a
+## save does not lose it; the growth tables grow nothing of it.
 static func _known_species() -> Dictionary:
-	var known := {}
-	for r in GrassTypes.new().rows:
-		if not r.is_empty():
-			known[String(r["name"])] = int(r.get("layer", GrassTypes.LAYER_GROUND))
-	return known
+	return GrassSpeciesCatalog.installed_layers()
 
 
 ## Rules from the shared growth table (its parsed JSON, the weights as written) for a map's surfaces: surfaces with

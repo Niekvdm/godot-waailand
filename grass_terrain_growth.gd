@@ -79,8 +79,8 @@ func _load_text(text: String) -> void:
 	var known := _known_types()
 	fallback = clampf(float(doc.get("default", 1.0)), 0.0, 1.0)
 	if doc.has("default_species"):
-		var ds := _mix(doc["default_species"], "default_species", known)
-		if not ds.is_empty():
+		var ds = _mix(doc["default_species"], "default_species", known)
+		if ds != null:
 			default_species = ds
 	for k in doc["slots"]:
 		var key := String(k).to_lower()
@@ -90,9 +90,9 @@ func _load_text(text: String) -> void:
 		if typeof(v) == TYPE_DICTIONARY:
 			dens = v.get("density")
 			if v.has("species"):
-				var m := _mix(v["species"], "%s species" % k, known)
-				if not m.is_empty():
-					species_by_name[key] = m
+				var m = _mix(v["species"], "%s species" % k, known)
+				if m != null:
+					species_by_name[key] = m          # {}: every name inactive: it grows nothing
 			if v.has("bands"):
 				var b := _band(v["bands"], k, known)
 				if not b.is_empty():
@@ -111,12 +111,15 @@ func _load_text(text: String) -> void:
 			_add_water(String(k), water[k], known)
 
 
-## Each species' layer by name (GrassTypes.LAYER_*): the names a mix may use, and where.
+## The names a mix may use: every installed species' {layer (GrassTypes.LAYER_*), active (it has a slot)}.
 static func _known_types() -> Dictionary:
 	var known := {}
+	var inst := GrassSpeciesCatalog.installed_layers()
+	for id in inst:
+		known[id] = {"layer": int(inst[id]), "active": false}
 	for r in GrassTypes.new().rows:
 		if not r.is_empty():
-			known[String(r["name"])] = int(r.get("layer", GrassTypes.LAYER_GROUND))
+			known[String(r["name"])] = {"layer": int(r.get("layer", GrassTypes.LAYER_GROUND)), "active": true}
 	return known
 
 
@@ -133,7 +136,8 @@ func _add_water(kind: String, v, known: Dictionary) -> void:
 		return
 	var m := {}
 	if typeof(v.get("species")) == TYPE_DICTIONARY and not (v["species"] as Dictionary).is_empty():
-		m = _mix(v["species"], "water %s species" % kind, known, GrassTypes.LAYER_SURFACE)
+		var got = _mix(v["species"], "water %s species" % kind, known, GrassTypes.LAYER_SURFACE)
+		m = got if got != null else {}
 	water_by_name[kind.to_lower()] = {"density": clampf(float(v["density"]), 0.0, 1.0), "species": m}
 	water_names.append(kind)
 
@@ -176,8 +180,8 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 	g.fallback = clampf(float(r.everything_else.get("density", 1.0)), 0.0, 1.0)
 	var es: Dictionary = r.everything_else.get("species", {})
 	if not es.is_empty():
-		var ds := g._mix(es, "everything else", known)
-		if not ds.is_empty():
+		var ds = g._mix(es, "everything else", known)
+		if ds != null:
 			g.default_species = ds
 	g.painted_only_rest = not (r.default_grass and bool(r.everything_else.get("default_grass", true)))
 	for rule in r.rules:
@@ -186,7 +190,7 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 			g._add_water(nm, {"density": float(rule.get("density", 1.0)), "species": rule.get("species", {})}, known)
 			continue
 		var sp: Dictionary = rule.get("species", {})
-		var m := {} if sp.is_empty() else g._mix(sp, "%s species" % nm, known)
+		var m = null if sp.is_empty() else g._mix(sp, "%s species" % nm, known)     # null: Everything else's
 		var bd: Dictionary = rule.get("band", {})
 		var b := {} if bd.is_empty() else g._band([bd], nm, known)
 		var off := not (r.default_grass and bool(rule.get("default_grass", true)))
@@ -194,7 +198,7 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 			var key := String(s).to_lower()
 			g.display_names[key] = String(s)
 			g.by_name[key] = clampf(float(rule.get("density", 1.0)), 0.0, 1.0)
-			if not m.is_empty():
+			if m != null:
 				g.species_by_name[key] = m
 			if not b.is_empty():
 				g.band_by_name[key] = b
@@ -203,31 +207,35 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 	return g
 
 
-## {type name: weight} normalised to sum 1, in the JSON's order; {} (and an error) when malformed or a species of the
-## other layer (`layer`: GrassTypes.LAYER_GROUND for a ground's mix, LAYER_SURFACE for a water kind's).
-func _mix(m, what: String, known: Dictionary, layer := GrassTypes.LAYER_GROUND) -> Dictionary:
+## {type name: weight} over the ACTIVE names, normalised to sum 1, in the JSON's order: a name installed but not active
+## (no slot) is skipped quietly, so a mix of none but them is {} (it grows nothing). null (and an error) when malformed,
+## naming a species nothing installs, or a species of the other layer (`layer`: GrassTypes.LAYER_GROUND for a ground's
+## mix, LAYER_SURFACE for a water kind's).
+func _mix(m, what: String, known: Dictionary, layer := GrassTypes.LAYER_GROUND) -> Variant:
 	if typeof(m) != TYPE_DICTIONARY or m.is_empty():
 		errors.append("%s: want {type name: weight}" % what)
-		return {}
+		return null
 	if m.size() > MIX_PAIRS:
 		errors.append("%s: %d species, at most %d" % [what, m.size(), MIX_PAIRS])
-		return {}
+		return null
 	var total := 0.0
 	for t in m:
 		if not known.has(str(t)):
 			errors.append("%s: no species named %s in the config's packs" % [what, t])
-			return {}
-		if int(known[str(t)]) != layer:
+			return null
+		if int(known[str(t)]["layer"]) != layer:
 			errors.append(("%s: %s floats on water (a surface species): give it to a water kind" if layer
 				== GrassTypes.LAYER_GROUND else "%s: %s is a ground species: it cannot float") % [what, t])
-			return {}
+			return null
 		if (typeof(m[t]) != TYPE_FLOAT and typeof(m[t]) != TYPE_INT) or float(m[t]) <= 0.0:
 			errors.append("%s: %s's weight is not a positive number" % [what, t])
-			return {}
-		total += float(m[t])
+			return null
+		if bool(known[str(t)]["active"]):
+			total += float(m[t])
 	var out := {}
 	for t in m:
-		out[str(t)] = float(m[t]) / total
+		if bool(known[str(t)]["active"]):
+			out[str(t)] = float(m[t]) / total
 	return out
 
 
@@ -239,10 +247,10 @@ func _band(bands, slot: String, known: Dictionary) -> Dictionary:
 	if typeof(b.get("above_m")) != TYPE_FLOAT and typeof(b.get("above_m")) != TYPE_INT:
 		errors.append("%s: the band has no numeric above_m" % slot)
 		return {}
-	var m := _mix(b.get("species"), "%s band" % slot, known)
-	if m.is_empty():
+	var m = _mix(b.get("species"), "%s band" % slot, known)
+	if m == null:
 		return {}
-	return {"above_m": float(b["above_m"]), "species": m}
+	return {"above_m": float(b["above_m"]), "species": m}     # {}: every name inactive: nothing above it
 
 
 func allowance(slot_name: String) -> float:

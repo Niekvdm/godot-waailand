@@ -114,6 +114,17 @@ static func build(p_packs: Array, p_table: Dictionary, p_fallback: StringName = 
 	return c
 
 
+## Every installed species' layer (GrassTypes.LAYER_*) by id: the config's installed packs, the first of a duplicate.
+static func installed_layers() -> Dictionary:
+	var out := {}
+	for pack in GrassBladesConfig.current().installed_packs():
+		for sp in pack.species:
+			if sp != null and sp.id != &"" and not out.has(String(sp.id)):
+				out[String(sp.id)] = GrassTypes.LAYER_SURFACE if sp.layer == GrassSpecies.Layer.SURFACE \
+					else GrassTypes.LAYER_GROUND
+	return out
+
+
 func slot_of(p_id: StringName) -> int:
 	return int(table.get(String(p_id), -1))
 
