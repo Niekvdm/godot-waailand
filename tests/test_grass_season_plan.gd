@@ -94,3 +94,15 @@ func test_the_blades_and_flowers_follow_the_plan() -> void:
 		"spider lily on the calendar")
 	ds.set_day(257.0)
 	assert_eq(ds.state(kinds.index_of("freesia")), Vector2.ZERO, "no plan: the calendar, as before")
+
+
+func test_all_in_bloom() -> void:
+	var fr := _keys("freesia")
+	var p := _plan({})
+	p.all_bloom = true
+	assert_eq(p.kind_state(fr, "freesia", 257.0), Vector2(1.0, 1.0), "the preview's In bloom: in flower off-season too")
+	assert_near(p.type_day("freesia", 257.0), GrassSeasonPlan.stage_day(fr, GrassSeasonPlan.PRIME), 1e-6,
+		"and its blades on that day")
+	var md := _plan({}, 172.0)
+	md.all_bloom = true
+	assert_eq(md.kind_state(fr, "freesia", 257.0), Vector2(1.0, 1.0), "over a map's fixed date too")

@@ -829,6 +829,9 @@ func _preview_tick() -> void:
 		_day_of_year = GrassEditorPreview.day
 	if GrassEditorPreview.all_grounds != all_grounds:
 		all_grounds = GrassEditorPreview.all_grounds
+	if GrassEditorPreview.all_bloom != season.all_bloom:
+		season.all_bloom = GrassEditorPreview.all_bloom      # a reloaded plan starts false: set again here
+		_season_dirty = true
 
 
 ## The far field (GrassFarField): (re)bind the terrain material, push what changed, then the wind, the

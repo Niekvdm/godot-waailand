@@ -14,6 +14,9 @@ const TICKS := [["Bud", 0.1], ["Early bloom", 0.25], ["Prime", 0.5], ["Fading", 
 var map_date := -1.0              # < 0: the clock (the game's day, the editor's preview date)
 var by_species := {}              # species name -> {mode, stage, day} (GrassGroundRules.seasons)
 var errors: PackedStringArray = []
+## The editor preview's In bloom (GrassEditorPreview.all_bloom): every species with flowers shows at mid-bloom, as its
+## "bloom" mode would, whatever its setting and the date. Never set in a game.
+var all_bloom := false
 var _first := {}                  # species name -> its first flower kind's window (bind)
 
 
@@ -68,6 +71,8 @@ static func stage_day(keys: Vector4, t: float) -> float:
 
 ## The day a species' flower kind (its window `keys`) is shown at.
 func kind_day(keys: Vector4, species: String, doy: float) -> float:
+	if all_bloom:
+		return stage_day(keys, PRIME)
 	var s: Dictionary = by_species.get(species, {})
 	match String(s.get("mode", "calendar")):
 		"bloom":
@@ -90,6 +95,8 @@ func kind_state(keys: Vector4, species: String, doy: float) -> Vector2:
 ## or the map's day.
 func type_day(species: String, doy: float) -> float:
 	var m := String(by_species.get(species, {}).get("mode", "calendar"))
+	if all_bloom and _first.has(species):
+		return kind_day(_first[species], species, doy)
 	if m == "date":
 		return float(by_species[species].get("day", doy))
 	if (m == "bloom" or m == "stage") and _first.has(species):

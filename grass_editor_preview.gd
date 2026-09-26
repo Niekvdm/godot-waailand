@@ -14,3 +14,4 @@ const DEFAULT_DAY := 104.0          # 15 April: the spring flowers are out
 static var day := DEFAULT_DAY
 static var visible := true
 static var all_grounds := false       # every ground grows (the preview only: the game never reads it)
+static var all_bloom := false         # every species with flowers in bloom (the preview only: GrassSeasonPlan.all_bloom)

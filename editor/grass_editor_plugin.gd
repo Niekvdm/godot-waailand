@@ -9,6 +9,7 @@ extends EditorPlugin
 const KEY_DAY := "preview_day"
 const KEY_VISIBLE := "preview_visible"
 const KEY_ALL_GROUNDS := "preview_all_grounds"
+const KEY_ALL_BLOOM := "preview_all_bloom"
 const PROVIDERS := "res://addons/terrain_3d_extended/src/tool_providers.gd"
 const UX_COMPONENTS := "res://addons/terrain_3d_extended/src/ux_components.gd"
 const PackInspector := preload("res://addons/waailand/editor/species_pack_inspector.gd")
@@ -27,6 +28,7 @@ func _enter_tree() -> void:
 	GrassEditorPreview.day = float(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_DAY, GrassEditorPreview.DEFAULT_DAY))
 	GrassEditorPreview.visible = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_VISIBLE, true))
 	GrassEditorPreview.all_grounds = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_GROUNDS, false))
+	GrassEditorPreview.all_bloom = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_BLOOM, false))
 	_menu = GrassPreviewMenu.new()
 	_menu.changed.connect(_save)
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _menu)
@@ -57,6 +59,7 @@ func _save() -> void:
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_DAY, GrassEditorPreview.day)
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_VISIBLE, GrassEditorPreview.visible)
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_GROUNDS, GrassEditorPreview.all_grounds)
+	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_BLOOM, GrassEditorPreview.all_bloom)
 
 
 ## The grass paint tool lives in the Terrain3D Extended overlay (1.2 or newer): without it there is none (Terrain3D's

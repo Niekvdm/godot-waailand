@@ -167,6 +167,13 @@ func set_preview_all_grounds(on: bool) -> void:
 	_strip_refresh()
 
 
+## The preview's In bloom: every species with flowers shown in bloom, whatever the date.
+func set_preview_all_bloom(on: bool) -> void:
+	GrassEditorPreview.all_bloom = on
+	preview_changed.emit()
+	_strip_refresh()
+
+
 ## Provider API (Terrain3D Extended 1.2): the view strip at the top of the 3D view.
 func build_view(box: HBoxContainer, kit: Object, accent: Color) -> void:
 	_strip = GrassViewStrip.new()

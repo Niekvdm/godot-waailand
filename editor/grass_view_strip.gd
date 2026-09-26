@@ -4,8 +4,8 @@
 class_name GrassViewStrip
 extends HBoxContainer
 ## The Grass workspace's view strip (Terrain3D Extended's strip at the top of the 3D view, provider build_view): the
-## eye (show grass), the year (GrassYearTrack: drag, or a month letter), the date, In bloom (the selected species in
-## flower), every ground, and Inspect (ⓘ: the brush chip reads what grows under the cursor, and why). It sets what the
+## eye (show grass), the year (GrassYearTrack: drag, or a month letter), the date, In bloom (every species with flowers
+## in bloom, whatever the date), every ground, and Inspect (ⓘ: the brush chip reads what grows under the cursor, and why). It sets what the
 ## preview shows (GrassEditorPreview), never what a stroke paints. A map that fixes the date (Ground rules) locks the
 ## year and says so, with the way to change it.
 
@@ -53,11 +53,9 @@ func setup(p_provider: GrassPaintProvider, p_kit: Object, p_accent: Color) -> vo
 	date.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	date.add_theme_font_size_override("font_size", 13)
 	add_child(date)
-	bloom = p_kit.chip("In bloom", false, p_accent)
-	bloom.pressed.connect(func() -> void:
-		var d := _p.bloom_day()
-		if d >= 0.0:
-			_p.set_preview_day(d))
+	bloom = p_kit.toggle_chip("In bloom", GrassEditorPreview.all_bloom, p_accent)
+	bloom.tooltip_text = "Every species with flowers in bloom, whatever the date (the preview only)"
+	bloom.toggled.connect(func(on: bool) -> void: _p.set_preview_all_bloom(on))
 	add_child(bloom)
 	every = p_kit.tool_button("view_every_ground", "Grow on every ground (the preview only)", p_accent)
 	every.toggled.connect(func(on: bool) -> void: _p.set_preview_all_grounds(on))
@@ -92,11 +90,4 @@ func refresh() -> void:
 	track.set_day(fixed if fixed >= 0.0 else GrassEditorPreview.day)
 	lock.visible = fixed >= 0.0
 	date.text = GrassSeason.label(track.day)
-	var bd := _p.bloom_day()
-	bloom.disabled = bd < 0.0 or fixed >= 0.0
-	if bd < 0.0:
-		bloom.tooltip_text = "The selected species has no flowers"
-	elif fixed >= 0.0:
-		bloom.tooltip_text = "This map fixes the date"
-	else:
-		bloom.tooltip_text = "The selected species in flower (%s)" % GrassSeason.label(bd)
+	bloom.set_pressed_no_signal(GrassEditorPreview.all_bloom)
