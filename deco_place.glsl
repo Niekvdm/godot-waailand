@@ -100,6 +100,7 @@ void main() {
 
 	ivec2 cell = tile * 16 + ivec2(gl_LocalInvocationID.xy);
 	int count = MODE == 1 ? int(SPACING) : 1;
+	bool surf = TYPE_LAYER(HOST) == 1;       // a floating host: its kinds root at the water's surface
 	uint nlive = 0u;
 	uint lbin[3];
 	uint lslot[3];
@@ -125,19 +126,24 @@ void main() {
 		}
 		vec4 pl;
 		int hty;
-		if (!place_at(pos, h3.x, pl, hty) || pl.r <= 0.0 || hty != HOST) {
+		vec4 wt = vec4(WATER_NONE);
+		bool ok = surf ? surface_at(pos, h3.x, pl, hty, wt) : place_at(pos, h3.x, pl, hty);
+		if (!ok || pl.r <= 0.0 || hty != HOST) {
 			continue;
 		}
-		int rty = hty;
-		float rdens = pl.r;
-		if (!ground_rule(pos, rty, rdens) || rty != HOST) {   // roads, verges, bed paths
-			continue;
+		if (!surf) {
+			int rty = hty;
+			float rdens = pl.r;
+			if (!ground_rule(pos, rty, rdens) || rty != HOST) {   // roads, verges, bed paths
+				continue;
+			}
 		}
 		if (PATCH_M > 0.0 && rnd3(ivec2(floor(pos / PATCH_M)), SALT + 15u).x >= PATCH_SHARE) {
 			continue;
 		}
 		float dens = DENSITY * pl.r;
-		vec3 root = vec3(pos.x, ground_h(pos) - ROOT_SINK, pos.y);
+		vec3 root = surf ? vec3(pos.x, wt.x + SURFACE_LIFT + bob(pos, wt, h2.z), pos.y)
+			: vec3(pos.x, ground_h(pos) - ROOT_SINK, pos.y);
 		if (isnan(root.y)) {
 			continue;
 		}
@@ -163,6 +169,9 @@ void main() {
 		vec4 iv = field_at(pos);
 		vec2 lay = length(iv.rg) > 1e-3 ? normalize(iv.rg) : vec2(0.0);
 		float yaw = FORCE_YAW >= 0.0 ? FORCE_YAW : h2.x * TAU;
+		if (surf && FORCE_YAW < 0.0) {
+			yaw += 0.15 * sin(TAU * (0.05 * TIME_S + h2.z));    // a floating leaf turns slowly back and forth
+		}
 		vec3 F = vec3(cos(yaw), 0.0, sin(yaw));
 		vec3 S = vec3(F.z, 0.0, -F.x);                    // S x U = F: a proper rotation
 		lbin[nlive] = bin;

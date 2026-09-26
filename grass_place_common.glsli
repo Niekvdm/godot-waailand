@@ -172,6 +172,8 @@ bool in_frustum(vec3 c, float r) {
 #define SEA_LEVEL       P.v[19].z          // GrassBlades.sea_level (set_sea)
 #define SEA_ON          (P.v[19].w > 0.5)  // no sea: every depth is dry land
 #define DEPTH_BASE      392                // T.v[392 + type]: (min, max, feather, layer), GrassTypes.depth_table
+#define WATER_BASE      424                // T.v[424 + kind * 4]: the water kinds' floating mixes, then (density, 0, 0, 0)
+#define WATER_KINDS     16                 // GrassTerrainGrowth.WATER_KINDS
 #define SEA_SHORE_M     0.3                // GrassTypes.SEA_SHORE_M: the sea's bare shore
 #define TYPE_LAYER(ty)  int(T.v[DEPTH_BASE + (ty)].w + 0.5)   // GrassTypes.LAYER_*: 0 ground, 1 surface
 #define BAND_SOFT_M     20.0               // an elevation band's edge wanders this much (m, total)
@@ -188,11 +190,18 @@ float type_eligibility(int ty, float d, float shore) {
 	return smoothstep(r.x, r.x + r.z, x) * (1.0 - smoothstep(r.y - r.z, r.y, x));
 }
 
+int pairs_pick(int o, float d, float shore, float u01, out float best);
+
 // The slot's mix at elevation h and depth d, sampled at u01 against weight x eligibility, renormalised
 // over the mix; best = the mix's best eligibility (the density multiplier). -1: nothing may grow.
 int mix_pick(int slot, float h, float d, float shore, float u01, out float best) {
 	vec4 hdr = T.v[MIX_BASE + slot * MIX_VEC4 + 6];
-	int o = MIX_BASE + slot * MIX_VEC4 + ((hdr.y > 0.5 && h > hdr.x) ? 3 : 0);
+	return pairs_pick(MIX_BASE + slot * MIX_VEC4 + ((hdr.y > 0.5 && h > hdr.x) ? 3 : 0), d, shore, u01, best);
+}
+
+// Six (type, cumulative weight) pairs in T.v[o..o+2] at depth d, sampled at u01 against weight x eligibility,
+// renormalised; best = their best eligibility. -1: nothing may grow. mix_pick's and the water kinds' mixes.
+int pairs_pick(int o, float d, float shore, float u01, out float best) {
 	float tot = 0.0;
 	float prev = 0.0;
 	best = 0.0;
@@ -408,6 +417,83 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 		ty = FALLBACK_TYPE;   // forced where the ground's mix can't grow at this depth: the fallback, where IT may
 		best = type_eligibility(FALLBACK_TYPE, depth, shore);
 	}
+	pl.r *= best;
+	if (ty < 0) {
+		ty = FALLBACK_TYPE;
+		pl.r = 0.0;
+	}
+	return true;
+}
+
+// Whether p's water bin lists no source (no water there but the sea's): a tile of the surface layer skips on it.
+bool water_bin_empty(vec2 p) {
+	if (WATER_BINS <= 0) {
+		return true;
+	}
+	ivec2 b = ivec2(floor((p - WATER_ORIGIN) / WATER_BIN_M));
+	if (any(lessThan(b, ivec2(0))) || any(greaterThanEqual(b, ivec2(WATER_BINS)))) {
+		return true;
+	}
+	uint bi = uint(b.y * WATER_BINS + b.x);
+	return WI.v[bi] == WI.v[bi + 1u];
+}
+
+// How far a floating root rides above its surface now: the sea's swell on the sea (the phase the blade shader's surge
+// uses), a slow bob elsewhere.
+float bob(vec2 p, vec4 wt, float seed) {
+	if (wt.w > 0.5) {
+		return 0.5 * SWELL_H * sin(SWELL_K * dot(p, SWELL_DIR) + SWELL_PHASE);
+	}
+	return BOB_M * sin(TAU * (0.25 * TIME_S + seed));
+}
+
+// The surface layer at pos (place_at's twin, over the water maps and the water kinds' mixes). False where no water
+// stands over the ground or a region is not loaded. pl as place_at's (r density, b height scale); ty the floating
+// type; wt the water (water_top). The allowance is the kind's density; a painted override or a forced texel grows
+// wherever there is water, and a painted ground species floats nothing. Species patches on their own streams (96+).
+bool surface_at(vec2 pos, float u, out vec4 pl, out int ty, out vec4 wt) {
+	pl = vec4(0.0);
+	ty = FALLBACK_TYPE;
+	wt = water_top(pos);
+	if (wt.x <= WATER_NONE) {
+		return false;
+	}
+	float gh = ground_h(pos);
+	if (isnan(gh) || wt.x - gh <= 0.0) {
+		return false;              // no ground loaded, or a bank inside the outline
+	}
+	float depth = wt.x - gh;
+	vec2 g = pos / T_SPACING;
+	ivec2 v0 = ivec2(floor(g));
+	vec2 f = g - vec2(v0);
+	vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+	vec4 c[4];
+	for (int i = 0; i < 4; i++) {
+		ivec3 t = vertex_texel(v0 + CORNER[i]);
+		if (t.z < 0) {
+			return false;
+		}
+		c[i] = texelFetch(water_maps, t, 0);
+	}
+	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
+	int k = u < w.x ? 0 : (u < w.x + w.y ? 1 : (u < w.x + w.y + w.z ? 2 : 3));
+	int kind = int(round(wt.y));
+	float dens = kind >= 0 ? T.v[WATER_BASE + kind * 4 + 3].x : 0.0;
+	int ov = int(c[k].g * 255.0 + 0.5) - 1;
+	pl.r *= (255.0 / 128.0) * ((ov >= 0 || c[k].a < 0.5) ? 1.0 : dens);
+	if (ov >= 0) {
+		ty = min(ov, 31);
+		pl.r *= TYPE_LAYER(ty) == 1 ? type_eligibility(ty, depth, 0.0) : 0.0;
+		return true;
+	}
+	if (kind < 0) {
+		pl.r = 0.0;
+		return true;
+	}
+	vec3 hp = rnd3(ivec2(floor(pos * 64.0)), 17u);
+	vec2 jit = (hp.xy - 0.5) * SPECIES_PATCH_M * 0.35;
+	float best;
+	ty = pairs_pick(WATER_BASE + kind * 4, depth, 0.0, species_patch(pos + jit, 32 + kind), best);
 	pl.r *= best;
 	if (ty < 0) {
 		ty = FALLBACK_TYPE;

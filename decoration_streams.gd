@@ -56,6 +56,8 @@ func prepare(types: GrassTypes) -> void:
 		m.set_shader_parameter("flutter", k["flutter"])
 		m.set_shader_parameter("wind_response", k["wind_response"])
 		m.set_shader_parameter("hinge_response", k["hinge_response"])
+		if int(types.row(int(k["host"])).get("layer", GrassTypes.LAYER_GROUND)) == GrassTypes.LAYER_SURFACE:
+			m.set_shader_parameter("hinge_response", 0.0)     # floating: no stem to bend about
 		materials.append(m)
 		_state.append(Vector2.ZERO)
 		kinds.mesh(i)

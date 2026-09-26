@@ -25,7 +25,7 @@ layout(set = 0, binding = 7, std430) restrict writeonly buffer DstSh { vec4 d[];
 layout(push_constant, std430) uniform Push {
 	ivec2 tile0;     // world tile index of the dispatch's first workgroup
 	int tiles;       // workgroups per side
-	int pad;
+	int layer;       // 0 the ground layer; 1 the surface layer (a second dispatch over the same tiles)
 } pc;
 
 // The camera distance at which a blade of rank/density q crosses the threshold
@@ -81,6 +81,12 @@ void main() {
 		if (!skip && (FLAGS & FLAG_FRUSTUM) != 0u) {
 			skip = !in_frustum(c, tr + SHADOW_MARGIN);
 		}
+		if (!skip && pc.layer == 1 && !SEA_ON) {
+			// The surface layer floats only on water: a tile no water source's bin reaches has none.
+			float hs = 0.5 * tsize;
+			skip = water_bin_empty(c2 + vec2(-hs, -hs)) && water_bin_empty(c2 + vec2(hs, -hs))
+				&& water_bin_empty(c2 + vec2(-hs, hs)) && water_bin_empty(c2 + vec2(hs, hs));
+		}
 		s_skip = skip;
 	}
 	barrier();
@@ -98,7 +104,9 @@ void main() {
 
 	vec4 pl;
 	int ty;
-	bool alive = place_at(pos, hd.x, pl, ty);
+	vec4 wt = vec4(WATER_NONE);
+	bool surface = pc.layer == 1;
+	bool alive = surface ? surface_at(pos, hd.x, pl, ty, wt) : place_at(pos, hd.x, pl, ty);
 	float dens = pl.r;
 	if (dens <= 0.0) {
 		alive = false;
@@ -125,8 +133,9 @@ void main() {
 	pos = mix(pos, centre, tb.x * 0.5);   // pull toward the clump centre
 	// Roads, bed stripes and the terrain rule judge the FINAL root: a root pulled across a road edge,
 	// into a bed path or onto ground that grows nothing after passing the rule would break it.
+	// (The surface layer has none of them: the final root's water is judged below.)
 	int ty0 = ty;
-	if (alive && (!ground_rule(pos, ty, dens) || ground_allowance(pos) <= 0.0)) {
+	if (!surface && alive && (!ground_rule(pos, ty, dens) || ground_allowance(pos) <= 0.0)) {
 		alive = false;
 	}
 	if (ty != ty0) {   // the verge rule changed the type: its shape from here on
@@ -141,15 +150,15 @@ void main() {
 		gh = CAM.y;
 	}
 	// The depth too, at the final root: a root pulled across a waterline or a water source's outline would grow a land
-	// type in the water, or a bed type on the bank.
-	if (alive) {
-		vec4 wf = water_top(pos);
-		if (type_eligibility(ty, wf.x > WATER_NONE ? wf.x - gh : -100.0, wf.z) <= 0.0) {
-			alive = false;
-		}
+	// type in the water, a bed type on the bank, or a floating one on dry ground.
+	vec4 wf = water_top(pos);
+	if (alive && type_eligibility(ty, wf.x > WATER_NONE ? wf.x - gh : -100.0, wf.z) <= 0.0) {
+		alive = false;
 	}
-	vec3 root = vec3(pos.x, gh - ROOT_SINK, pos.y);
-	vec3 gn = ground_n(pos);
+	// A floating root rides its surface (bobbing); a ground root sits in the ground.
+	vec3 root = surface ? vec3(pos.x, wf.x + SURFACE_LIFT + bob(pos, wf, hc.z), pos.y)
+		: vec3(pos.x, gh - ROOT_SINK, pos.y);
+	vec3 gn = surface ? vec3(0.0, 1.0, 0.0) : ground_n(pos);
 	if (gn.y < MAX_SLOPE_COS) {
 		alive = false;
 	}

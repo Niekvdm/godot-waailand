@@ -37,6 +37,7 @@ var height: Callable = func(_v: Vector2i) -> float: return NAN
 var pending: Callable = func(_v: Vector2i) -> bool: return false
 ## The surface layer's texel at vertex v (the water maps; sample_water).
 var water_texel: Callable = func(_v: Vector2i) -> Color: return GrassMaps.NEUTRAL
+var water_mix := PackedFloat32Array()   # GrassTerrainGrowth.water_bytes as floats (sample_water)
 
 
 func sample(pos: Vector3) -> GrassSample:
@@ -168,18 +169,23 @@ func _mix_pick(slot: int, h: float, d: float, u01: float, shore := GrassTypes.SE
 	var base := slot * MIX_FLOATS
 	if base + MIX_FLOATS > mix.size():
 		return Vector2(-1.0, 0.0)
-	var o := base + (12 if mix[base + 25] > 0.5 and h > mix[base + 24] else 0)
+	return _pairs_pick(mix, base + (12 if mix[base + 25] > 0.5 and h > mix[base + 24] else 0), d, shore, u01)
+
+
+## Six (type, cumulative weight) pairs from `o` in `arr` at depth d, sampled at u01 against weight x eligibility
+## (pairs_pick): Vector2(type, best eligibility); type -1: nothing may grow.
+func _pairs_pick(arr: PackedFloat32Array, o: int, d: float, shore: float, u01: float) -> Vector2:
 	var tot := 0.0
 	var prev := 0.0
 	var best := 0.0
 	for i in 6:
-		var t := mix[o + i * 2]
+		var t := arr[o + i * 2]
 		if t < 0.0:
 			break
 		var e := _eligible(int(t), d, shore)
-		tot += (mix[o + i * 2 + 1] - prev) * e
+		tot += (arr[o + i * 2 + 1] - prev) * e
 		best = maxf(best, e)
-		prev = mix[o + i * 2 + 1]
+		prev = arr[o + i * 2 + 1]
 	if tot <= 0.0:
 		return Vector2(-1.0, best)
 	var want := u01 * tot
@@ -187,17 +193,72 @@ func _mix_pick(slot: int, h: float, d: float, u01: float, shore := GrassTypes.SE
 	var last := -1
 	prev = 0.0
 	for i in 6:
-		var t := mix[o + i * 2]
+		var t := arr[o + i * 2]
 		if t < 0.0:
 			break
 		var e := _eligible(int(t), d, shore)
-		acc += (mix[o + i * 2 + 1] - prev) * e
-		prev = mix[o + i * 2 + 1]
+		acc += (arr[o + i * 2 + 1] - prev) * e
+		prev = arr[o + i * 2 + 1]
 		if e > 0.0:
 			last = int(t)
 			if want < acc:
 				return Vector2(last, best)
 	return Vector2(last, best)
+
+
+## What floats at pos (surface_at, mirrored): the water kind's mix, or the water maps' override, at the water's depth;
+## the corner that contributes most, as sample() takes. Empty where no water stands over the ground or nothing floats.
+func sample_water(pos: Vector3) -> GrassSample:
+	var s := GrassSample.new()
+	var p := Vector2(pos.x, pos.z)
+	var wt := _water_top(p)
+	var gh := _ground_h(p)
+	if wt.x <= GrassWater.NONE or is_nan(gh) or wt.x - gh <= 0.0:
+		return s
+	var depth := wt.x - gh
+	var g := p / spacing
+	var v0 := Vector2i(floori(g.x), floori(g.y))
+	var f := g - Vector2(v0)
+	var w: Array[float] = [(1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y]
+	var r := 0.0
+	var b := 0.0
+	var k := 0
+	for i in 4:
+		var c: Color = water_texel.call(v0 + CORNERS[i])
+		r += c.r * w[i]
+		b += c.b * w[i]
+		if w[i] > w[k]:
+			k = i
+	var ck: Color = water_texel.call(v0 + CORNERS[k])
+	var kind := roundi(wt.y)
+	var o := kind * GrassTerrainGrowth.WATER_VEC4 * 4
+	var dens_k := water_mix[o + 12] if kind >= 0 and o + 12 < water_mix.size() else 0.0
+	var ty := ck.g8 - 1
+	var dens := r * (255.0 / 128.0) * (1.0 if ty >= 0 or ck.a < 0.5 else dens_k)
+	if ty >= 0:
+		ty = mini(ty, 31)
+		var row: Dictionary = types.rows[ty] if ty < types.rows.size() else {}
+		dens *= _eligible(ty, depth, 0.0) if int(row.get("layer", GrassTypes.LAYER_GROUND)) \
+			== GrassTypes.LAYER_SURFACE else 0.0
+	elif kind >= 0 and o + 16 <= water_mix.size():
+		var hp := GrassHash.rnd3(Vector2i(floori(p.x * 64.0), floori(p.y * 64.0)), 17)
+		var jit := (Vector2(hp.x, hp.y) - Vector2(0.5, 0.5)) * species_patch_m * 0.35
+		var pick := _pairs_pick(water_mix, o, depth, 0.0, _species_patch(p + jit, 32 + kind))
+		ty = int(pick.x)
+		dens *= pick.y
+	else:
+		ty = -1
+	if ty < 0 or dens <= 0.0:
+		return s
+	var tr := types.row(ty)
+	s.species = StringName(tr.get("name", ""))
+	s.density = dens
+	s.forced = ck.a < 0.5
+	s.surface_m = wt.x
+	s.height_m = float(tr["height"]) * float(tr.get("season_h", 1.0)) * b * 2.0
+	s.colour = GrassColour.at(tr, 0.5, 0.5, float(tr.get("accent", 0.0)))
+	_flower(s, ty, p)
+	return s
 
 
 ## The species patch value at pos for a slot (species_patch): the nearest of the 9 jittered sites' hash.

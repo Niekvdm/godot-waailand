@@ -236,6 +236,7 @@ var _water_count := 0
 var _water_pack := {}              # the water pack last sent to the GPU (the query and water_surface read the same)
 var _water_index := {}             # lower-case water kind -> index (the growth table's water section)
 var _sea_kind := -1                # the sea's water kind (GrassWater.SEA_KIND), -1: none
+var _water_bytes := PackedByteArray()   # GrassTerrainGrowth.water_bytes: T.v[424..487]
 var _clock := 0.0                  # seconds, wrapped every hour: the floating plants' bob
 var _water_idx := RID()
 var _water_shapes := RID()
@@ -637,6 +638,7 @@ func refresh_growth() -> void:
 	_slot_mixes = growth.slot_mixes(assets, types)
 	_water_index = growth.water_index()
 	_sea_kind = int(_water_index.get(GrassWater.SEA_KIND.to_lower(), -1))
+	_water_bytes = growth.water_bytes(types)
 	_water_dirty = true
 	_far_dirty = true
 	_types_up.mark()
@@ -727,6 +729,16 @@ static func water_folder(maps_folder: String) -> String:
 func set_water(source) -> void:
 	water.source = source
 	_water_dirty = true
+
+
+## What floats at a point (GrassQuery.sample_water over the live inputs): the surface layer's species; empty where no
+## water stands over the ground or nothing floats.
+func sample_water(p_position: Vector3) -> GrassSample:
+	if terrain == null or terrain.get("data") == null:
+		return GrassSample.new()
+	sample(p_position)                  # brings the query's live inputs up to date
+	_query.water_mix = _water_bytes.to_float32_array()
+	return _query.sample_water(p_position)
 
 
 ## The highest water surface over `p` (a source's or the sea's), NAN where no water stands over the ground. It reads
@@ -914,6 +926,8 @@ func _dispatch(dt: float) -> void:
 		_water_rev = wrev
 		_water_count = int(wpk["count"])
 		_water_dirty = false
+	# The surface layer runs where anything can float: a water source in the window, or the sea with an entry.
+	ground["surface"] = _water_count > 0 or (not is_nan(_sea_level) and _sea_kind >= 0)
 	var params := _params_bytes(cam)
 	var types_b := PackedByteArray()                        # empty: the GPU has the latest, no upload
 	var types_gen := _types_up.pending()
@@ -925,6 +939,7 @@ func _dispatch(dt: float) -> void:
 		for v: Vector4 in types.depth_table():
 			depth.append_array([v.x, v.y, v.z, v.w])
 		_types_bytes.append_array(depth.to_byte_array())
+		_types_bytes.append_array(_water_bytes)             # T.v[424..487]: the water kinds' floating mixes
 		_types_bytes_gen = types_gen
 	if types_gen != 0:
 		types_b = _types_bytes
@@ -1153,10 +1168,11 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 	_place_pipe = rd.compute_pipeline_create(_place_shader)
 	_fin_pipe = rd.compute_pipeline_create(_fin_shader)
 	_params = rd.storage_buffer_create(PARAM_VEC4 * 16)
-	# The type rows, row e (stripes) and the terrain's 32 growth allowances (8 vec4).
+	# The type rows, row e (stripes), the terrain's 32 growth allowances (8 vec4) and mixes, the depth rows, the water
+	# kinds' mixes.
 	_types_buf = rd.storage_buffer_create((GrassTypes.SLOTS * GrassTypes.VEC4 + GrassTypes.SLOTS
 		+ GrassTerrainGrowth.SLOTS / 4 + GrassTerrainGrowth.SLOTS * GrassTerrainGrowth.MIX_VEC4
-		+ GrassTypes.SLOTS) * 16)
+		+ GrassTypes.SLOTS + GrassTerrainGrowth.WATER_KINDS * GrassTerrainGrowth.WATER_VEC4) * 16)
 	var zero16 := PackedByteArray()
 	zero16.resize(16)
 	_counters = rd.storage_buffer_create(16, zero16)
@@ -1290,6 +1306,12 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 	rd.compute_list_bind_uniform_set(cl, _place_set, 0)
 	rd.compute_list_set_push_constant(cl, push, push.size())
 	rd.compute_list_dispatch(cl, tiles, tiles, 1)
+	if bool(ground.get("surface", false)):
+		# The surface layer: the same kernel and tiles, appending to the same bins (the finalize counts both).
+		var sp := push.duplicate()
+		sp.encode_s32(12, 1)
+		rd.compute_list_set_push_constant(cl, sp, sp.size())
+		rd.compute_list_dispatch(cl, tiles, tiles, 1)
 	rd.compute_list_add_barrier(cl)
 	var fp := PackedByteArray()
 	fp.resize(16)

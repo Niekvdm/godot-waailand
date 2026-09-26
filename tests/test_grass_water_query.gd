@@ -59,6 +59,7 @@ func _query(ground: int, tex: Color, h := 0.0) -> GrassQuery:
 	var assets := _assets()
 	q.allow = growth.table_for(assets)
 	q.mix = growth.mix_bytes(assets, q.types).to_float32_array()
+	q.water_mix = growth.water_bytes(q.types).to_float32_array()
 	q.spacing = 0.5
 	q.texel = func(_v: Vector2i) -> Color: return tex
 	q.control = func(_v: Vector2i) -> int: return _cw(ground)
@@ -112,3 +113,29 @@ func test_the_highest_surface_and_the_sea() -> void:
 	assert_eq(q.sample(Vector3(10, -0.5, 0)).species, &"t_weed", "the pond over a lower sea")
 	q.sea_level = 3.0
 	assert_eq(q.sample(Vector3(10, -0.5, 0)).species, &"", "under a sea 3.5 m deep the weed (to 3 m) stops")
+
+
+func test_what_floats() -> void:
+	var q := _query(W, GrassMaps.NEUTRAL, -0.5)
+	_with_pond(q)
+	var s := q.sample_water(Vector3(10, 0, 0))
+	assert_eq(s.species, &"t_lily", "the pond's mix floats the lily")
+	assert_near(s.surface_m, 0.5, 1e-6, "on the surface")
+	assert_eq(q.sample_water(Vector3(-10, 0, 0)).species, &"", "no water: nothing floats")
+	assert_true(is_nan(q.sample(Vector3(10, -0.5, 0)).surface_m), "the ground layer names no surface")
+	var duck := _slot(q, "t_duck")
+	var paint := _query(W, GrassMaps.NEUTRAL, -0.5)
+	_with_pond(paint)
+	paint.water_texel = func(_v: Vector2i) -> Color: return GrassMapCodec.encode(1.0, duck, 0.5)
+	assert_eq(paint.sample_water(Vector3(10, 0, 0)).species, &"t_duck", "a painted override floats")
+	var ground_sp := _query(W, GrassMaps.NEUTRAL, -0.5)
+	_with_pond(ground_sp)
+	ground_sp.water_texel = func(_v: Vector2i) -> Color: return GrassMapCodec.encode(1.0, _slot(q, "t_land"), 0.5)
+	assert_eq(ground_sp.sample_water(Vector3(10, 0, 0)).species, &"", "a painted ground species floats nothing")
+	var dry := _query(W, GrassMaps.NEUTRAL, 1.0)
+	_with_pond(dry)
+	assert_eq(dry.sample_water(Vector3(10, 1, 0)).species, &"", "a bank inside the outline: nothing floats")
+
+
+func _slot(q: GrassQuery, nm: String) -> int:
+	return q.types.names().find(nm)

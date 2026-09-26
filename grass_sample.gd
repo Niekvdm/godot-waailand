@@ -23,3 +23,5 @@ var forced := false
 var on_road := false
 ## The region's grass map is still loading for the queries: the point reads as unpainted until it arrives.
 var pending := false
+## The water surface the species floats on (GrassBlades.sample_water; NAN from the ground layer's sample).
+var surface_m := NAN
