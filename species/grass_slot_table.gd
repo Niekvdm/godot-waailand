@@ -3,9 +3,10 @@
 @tool
 class_name GrassSlotTable
 extends RefCounted
-## The project's slot table: species id -> the slot the grass maps' species
-## byte and the GPU tables use. A new species takes the lowest free slot; a slot is never reused, so old paint never
-## turns into another species. One JSON file: {"format": 1, "slots": {id: slot}}.
+## The project's slot table: species id -> the slot the grass maps' species byte and the GPU tables use, and the
+## fallback. It is the ACTIVE set: the Species dialog edits it (GrassActiveSet); tools and tests without a file give
+## their packs' species the lowest free slots (assign). One JSON file: {"format": 1, "slots": {id: slot}, "fallback": id}
+## ("fallback" optional).
 
 const FORMAT := 1
 
@@ -28,8 +29,16 @@ static func load_file(p_path: String) -> Dictionary:
 	return out
 
 
-## Writes the table, in slot order.
-static func save_file(p_path: String, p_table: Dictionary) -> Error:
+## The table's fallback in a file; &"" when it names none (or there is no file).
+static func load_fallback(p_path: String) -> StringName:
+	if p_path == "" or not FileAccess.file_exists(p_path):
+		return &""
+	var doc = JSON.parse_string(FileAccess.get_file_as_string(p_path))
+	return StringName(str(doc.get("fallback", ""))) if typeof(doc) == TYPE_DICTIONARY else &""
+
+
+## Writes the table, in slot order, and its fallback when there is one.
+static func save_file(p_path: String, p_table: Dictionary, p_fallback: StringName = &"") -> Error:
 	var pairs := []
 	for id in p_table:
 		pairs.append([String(id), int(p_table[id])])
@@ -40,7 +49,10 @@ static func save_file(p_path: String, p_table: Dictionary) -> Error:
 	var f := FileAccess.open(p_path, FileAccess.WRITE)
 	if f == null:
 		return FileAccess.get_open_error()
-	f.store_string(JSON.stringify({"format": FORMAT, "slots": slots}, "\t", false) + "\n")
+	var doc := {"format": FORMAT, "slots": slots}
+	if p_fallback != &"":
+		doc["fallback"] = String(p_fallback)
+	f.store_string(JSON.stringify(doc, "\t", false) + "\n")
 	f.close()
 	return OK
 
