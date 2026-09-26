@@ -248,3 +248,33 @@ func test_the_dialog_is_modal() -> void:
 	assert_eq(d.get_global_rect(), root.get_visible_rect(), "it covers the whole window, not its parent")
 	root.remove_child(host)
 	host.free()
+
+
+func test_water_kinds() -> void:
+	var keep := TestGrassWaterGrowth.use_water_fixture()
+	var d := _dialog(GrassGroundRules.from_text(JSON.stringify(RULES)))
+	assert_true(_has_text(d, "RULES · 2") and _has_text(d, "WATER · 0"), "the rules and the water kinds, counted apart")
+	(d.find_child("NewWater", true, false) as Button).pressed.emit()
+	var i := d.rules.rules.size() - 1
+	assert_true(d.rules.is_water(i) and d.selected == i, "+ New water kind: a water kind, selected")
+	assert_true(d.find_child("Water%d" % i, true, false) != null, "its row under Water")
+	assert_true(d.find_child("DefaultGrass", true, false) == null and d.find_child("AddBand", true, false) == null
+		and d.find_child("RuleSurfaces", true, false) == null, "a water kind has no surfaces, band or default grass")
+	var strip: Array = _tiles(d.find_child("SpeciesStrip", true, false), "ground_species").map(func(t): return t.drag_id)
+	assert_true(strip.has("t_lily") and strip.has("t_duck") and not strip.has("pasture"), "its strip: surface species")
+	assert_true(_has_text(d, "Floats nothing"), "an empty water kind floats nothing (it inherits no mix)")
+	var lily: GroundTile = _tiles(d.find_child("SpeciesStrip", true, false), "ground_species").filter(
+		func(t): return t.drag_id == "t_lily")[0]
+	lily.pressed.emit()
+	assert_eq(d.rules.rules[i]["species"], {"t_lily": 1.0}, "a surface species clicked in")
+	(d.find_child("Name", true, false) as LineEdit).text_submitted.emit("Vijver")
+	assert_eq(d.rules.rules[i]["name"], "Vijver", "named as its sources' water_kind")
+	assert_true(not (d.find_child("Water%d" % i, true, false) as GroundDropTarget)._can_drop_data(Vector2.ZERO,
+		{"kind": "ground_surface", "id": "Mud"}), "a surface cannot be dropped on a water kind")
+	d.selected = 0
+	d.rebuild()
+	var ground: Array = _tiles(d.find_child("SpeciesStrip", true, false), "ground_species").map(func(t): return t.drag_id)
+	assert_true(not ground.has("t_lily") and ground.has("fern"), "a rule's strip: ground species only")
+	assert_eq(GrassTerrainGrowth.from_rules(d.rules).water_names, PackedStringArray(["Vijver"]), "the map floats it")
+	d.free()
+	GrassBladesConfig.use(keep)

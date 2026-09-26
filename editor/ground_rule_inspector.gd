@@ -5,7 +5,8 @@ class_name GroundRuleInspector
 extends RefCounted
 ## The Rules tab's right column: the selected rule, with its name (Enter or leaving
 ## the box renames it), its surfaces (drag out; drop in on +), Default grass, Density, the species mix (GroundMixEditor)
-## and its elevation band. Everything else (-1) has no name, surfaces or band.
+## and its elevation band. Everything else (-1) has no name, surfaces or band; a water kind has its name, Density and
+## its floating mix.
 
 
 static func build(d: GroundRulesDialog, i: int) -> Control:
@@ -20,6 +21,14 @@ static func build(d: GroundRulesDialog, i: int) -> Control:
 	if i >= d.rules.rules.size():
 		i = -1
 	var r: Dictionary = d.rules.rules[i] if i >= 0 else d.rules.everything_else
+	if d.rules.is_water(i):
+		v.add_child(d.kit.section("Water kind"))
+		v.add_child(_name_row(d, i, r))
+		v.add_child(d.hint("Its water sources carry this name (their water_kind); what it floats grows on them."))
+		v.add_child(_density(d, i, r))
+		v.add_child(d.kit.section("Floating mix"))
+		v.add_child(GroundMixEditor.build(d, i, false))
+		return sc
 	v.add_child(d.kit.section("Rule" if i >= 0 else "Everything else"))
 	if i >= 0:
 		v.add_child(_name_row(d, i, r))
@@ -37,6 +46,17 @@ static func build(d: GroundRulesDialog, i: int) -> Control:
 		v.add_child(d.hint("The map's default grass is off (the switch at the top): only painted grass grows."))
 	elif not bool(r.get("default_grass", true)):
 		v.add_child(d.hint("Only painted species and forced spots grow here."))
+	v.add_child(_density(d, i, r))
+	v.add_child(d.kit.section("Species mix"))
+	v.add_child(GroundMixEditor.build(d, i, false))
+	if i >= 0:
+		v.add_child(d.kit.section("Elevation band"))
+		v.add_child(_band(d, i, r))
+	return sc
+
+
+## The rule's density slider, written on release.
+static func _density(d: GroundRulesDialog, i: int, r: Dictionary) -> Control:
 	var dens: VBoxContainer = d.kit.slider_row("Density (×)", 0.0, 1.0, 0.05, float(r.get("density", 1.0)), "", d.accent)
 	dens.name = "Density"
 	var sl: HSlider = dens.get_node("Slider")
@@ -44,13 +64,7 @@ static func build(d: GroundRulesDialog, i: int) -> Control:
 	sl.drag_ended.connect(func(moved: bool) -> void:
 		if moved:
 			d.change(func() -> void: d.rules.set_field(i, "density", sl.value)))
-	v.add_child(dens)
-	v.add_child(d.kit.section("Species mix"))
-	v.add_child(GroundMixEditor.build(d, i, false))
-	if i >= 0:
-		v.add_child(d.kit.section("Elevation band"))
-		v.add_child(_band(d, i, r))
-	return sc
+	return dens
 
 
 static func _name_row(d: GroundRulesDialog, i: int, r: Dictionary) -> Control:

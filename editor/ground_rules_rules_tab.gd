@@ -80,7 +80,11 @@ static func _rules(d: GroundRulesDialog) -> Control:
 	v.name = "Rules"
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var head := HBoxContainer.new()
-	var lab: Label = d.kit.section("Rules · %d" % d.rules.rules.size())
+	var n_water := 0
+	for i in d.rules.rules.size():
+		if d.rules.is_water(i):
+			n_water += 1
+	var lab: Label = d.kit.section("Rules · %d" % (d.rules.rules.size() - n_water))
 	lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(lab)
 	var add: Button = d.kit.chip("+ New rule", false, d.accent)
@@ -97,7 +101,8 @@ static func _rules(d: GroundRulesDialog) -> Control:
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
 	for i in d.rules.rules.size():
-		list.add_child(_row(d, i))
+		if not d.rules.is_water(i):
+			list.add_child(_row(d, i))
 	var zone := GroundDropTarget.new().setup("ground_surface", func(id: String) -> void:
 		d.change(func() -> void: d.selected = d.rules.new_rule_from(id)),
 		GroundRulesDialog.box(Color(d.accent, 0.05), Color(d.accent, 0.5)),
@@ -112,20 +117,36 @@ static func _rules(d: GroundRulesDialog) -> Control:
 	zone.add_child(zl)
 	list.add_child(zone)
 	list.add_child(_row(d, -1))
+	# The water kinds: what floats on each kind of water (its sources' water_kind).
+	var wh := HBoxContainer.new()
+	var wl: Label = d.kit.section("Water · %d" % n_water)
+	wl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wh.add_child(wl)
+	var addw: Button = d.kit.chip("+ New water kind", false, d.accent)
+	addw.name = "NewWater"
+	addw.tooltip_text = "What floats on a kind of water: named as its water sources' water_kind"
+	addw.pressed.connect(func() -> void:
+		d.change(func() -> void: d.selected = d.rules.add_water("Water")))
+	wh.add_child(addw)
+	list.add_child(wh)
+	for i in d.rules.rules.size():
+		if d.rules.is_water(i):
+			list.add_child(_row(d, i))
 	sc.add_child(list)
 	v.add_child(sc)
 	return v
 
 
 ## A rule's row (-1: Everything else): its dot, name, surface thumbnails, band, mix bar and state. A drop moves a surface
-## into it; a click selects it.
+## into it; a click selects it. A water kind's row takes no surfaces.
 static func _row(d: GroundRulesDialog, i: int) -> Control:
 	var r: Dictionary = d.rules.rules[i] if i >= 0 else d.rules.everything_else
+	var water := d.rules.is_water(i)
 	var sel := d.selected == i
 	var normal := GroundRulesDialog.box(Color(d.accent, 0.14) if sel else ROW, d.accent if sel else (EDGE if i < 0 else NONE))
-	var row := GroundDropTarget.new().setup("ground_surface" if i >= 0 else "", func(id: String) -> void:
+	var row := GroundDropTarget.new().setup("ground_surface" if i >= 0 and not water else "", func(id: String) -> void:
 		d.change(func() -> void: d.rules.move_surface(id, i)), normal, GroundRulesDialog.box(Color(d.accent, 0.2), d.accent))
-	row.name = ("Rule%d" % i) if i >= 0 else "EverythingElse"
+	row.name = ("Water%d" % i) if water else (("Rule%d" % i) if i >= 0 else "EverythingElse")
 	row.pressed.connect(func() -> void:
 		d.selected = i
 		d.rebuild())
@@ -141,7 +162,9 @@ static func _row(d: GroundRulesDialog, i: int) -> Control:
 	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nm.tooltip_text = nm.text
 	h.add_child(nm)
-	if i >= 0:
+	if water:
+		h.add_child(d.note("floats"))
+	elif i >= 0:
 		var surf: Array = r["surfaces"]
 		for j in mini(surf.size(), THUMBS):
 			h.add_child(_thumb(d, String(surf[j])))
@@ -164,7 +187,11 @@ static func _row(d: GroundRulesDialog, i: int) -> Control:
 static func _state(d: GroundRulesDialog, r: Dictionary) -> Label:
 	var l := Label.new()
 	l.add_theme_font_size_override("font_size", 10)
-	if float(r.get("density", 1.0)) <= 0.0:
+	if bool(r.get("water", false)):
+		l.text = "floats nothing" if (r["species"] as Dictionary).is_empty() or float(r.get("density", 1.0)) <= 0.0 \
+			else "×%.2f" % float(r["density"])
+		l.modulate = GroundRulesDialog.DIM if l.text == "floats nothing" else Color.WHITE
+	elif float(r.get("density", 1.0)) <= 0.0:
 		l.text = "grows nothing"
 		l.modulate = GroundRulesDialog.DIM
 	elif not d.rules.default_grass or not bool(r.get("default_grass", true)):

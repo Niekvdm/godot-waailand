@@ -294,8 +294,11 @@ func rule_colour(i: int) -> Color:
 	return Color(String(rules.rules[i]["colour"])) if i >= 0 and i < rules.rules.size() else Color(0, 0, 0, 0)
 
 
-## What rule i grows (-1: Everything else): its own mix, else Everything else's, else the defaults.
+## What rule i grows (-1: Everything else): its own mix, else Everything else's, else the defaults. A water kind: its
+## own mix (empty: it floats nothing).
 func mix_of(i: int) -> Dictionary:
+	if rules.is_water(i):
+		return rules.rules[i]["species"]
 	if i >= 0 and not (rules.rules[i]["species"] as Dictionary).is_empty():
 		return rules.rules[i]["species"]
 	if not (rules.everything_else["species"] as Dictionary).is_empty():

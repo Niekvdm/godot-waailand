@@ -6,13 +6,16 @@ extends RefCounted
 ## A species mix in the Ground rules dialog: the stacked bar, a row per species (picture, name, weight on release, share,
 ## ✕) and the species strip (click one, or drag it onto the editor, to add it)
 ## (at most six). An empty mix inherits (a rule: Everything else's; Everything else: the defaults) and is shown dimmed;
-## adding to it first copies what it inherited.
+## adding to it first copies what it inherited. A water kind's mix inherits nothing (empty, it floats nothing) and
+## offers surface species only; a ground mix ground species only.
 
 
 static func build(d: GroundRulesDialog, i: int, band: bool) -> GroundDropTarget:
 	var r: Dictionary = d.rules.rules[i] if i >= 0 else d.rules.everything_else
 	var mix: Dictionary = r["band"]["species"] if band else r["species"]
-	var inherited := d.mix_of(-1) if i >= 0 else GrassTerrainGrowth.pack_default_mix()
+	var water := d.rules.is_water(i)
+	var inherited := {} if water else (d.mix_of(-1) if i >= 0 else GrassTerrainGrowth.pack_default_mix())
+	var layer := GrassTypes.LAYER_SURFACE if water else GrassTypes.LAYER_GROUND
 	var add := func(sp: String) -> void:
 		var base := mix if not mix.is_empty() else inherited
 		var tot := 0.0
@@ -36,8 +39,9 @@ static func build(d: GroundRulesDialog, i: int, band: bool) -> GroundDropTarget:
 	if mix.is_empty():
 		bar.modulate.a = 0.4
 		v.add_child(bar)
-		v.add_child(d.hint("Everything else's mix. Add a species to give this rule its own." if i >= 0
-			else "The packs' default mix. Add a species to set this map's own."))
+		v.add_child(d.hint("Floats nothing. Add a species to float it on this water." if water
+			else ("Everything else's mix. Add a species to give this rule its own." if i >= 0
+			else "The packs' default mix. Add a species to set this map's own.")))
 	else:
 		v.add_child(bar)
 	var tot := 0.0
@@ -51,7 +55,7 @@ static func build(d: GroundRulesDialog, i: int, band: bool) -> GroundDropTarget:
 	var full := mix.size() >= GrassGroundRules.MIX_MAX
 	for e in GrassPaintTool.palette(d.types):
 		var sp := String(e["name"])
-		if mix.has(sp):
+		if mix.has(sp) or int(e["layer"]) != layer:
 			continue
 		var t := GroundTile.make("ground_species", sp, d.species_picture(sp), sp.capitalize(), 28, Color(0, 0, 0, 0), false,
 			e["colour"])
