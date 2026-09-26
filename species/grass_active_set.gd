@@ -18,6 +18,9 @@ const KINDS := 32
 var slots: Array[StringName] = []
 ## The fallback: an active species, or &"" (the config's or the first pack's then).
 var fallback: StringName = &""
+## The budgets the last refused change would have passed: "species", "kinds" or both ("species,kinds"); "" when it
+## was done or refused for another reason. The dialog turns their meters red.
+var over := ""
 var _installed := {}             # id -> GrassSpecies
 
 
@@ -60,6 +63,7 @@ func species(id: StringName) -> GrassSpecies:
 	return _installed.get(id)
 
 
+## Whether some installed pack has `id`.
 func is_installed(id: StringName) -> bool:
 	return _installed.has(id)
 
@@ -78,18 +82,22 @@ func active() -> Array[StringName]:
 	return out
 
 
+## The slots in use (missing species included).
 func used_slots() -> int:
 	return active().size()
 
 
+## The empty slots.
 func free_slots() -> int:
 	return SLOTS - used_slots()
 
 
+## The flower kinds species `id` brings (0 when it is not installed).
 func kinds_of(id: StringName) -> int:
 	return kinds_in(species(id))
 
 
+## The flower kinds the active species bring together.
 func used_kinds() -> int:
 	var n := 0
 	for id in active():
@@ -113,24 +121,28 @@ func layer_counts() -> Dictionary:
 
 ## Makes `id` active in slot `i` (-1: the first free one). "" when done, else why not.
 func place(id: StringName, i := -1) -> String:
+	over = ""
 	var why := _can_take(id)
 	if why != "":
 		return why
 	if i < 0:
 		i = slots.find(&"")
 		if i < 0:
+			over = "species"
 			return "No free slot: all %d are active." % SLOTS
 	elif slots[i] != &"":
 		return "Slot %d holds %s: replace it instead." % [i, slots[i]]
 	var k := kinds_of(id)
 	if used_kinds() + k > KINDS:
-		return "%s brings %d flower kinds; %d of %d are free." % [id, k, KINDS - used_kinds(), KINDS]
+		over = "kinds"
+		return "%s brings %s; %d of %d are free." % [id, _n(k, "flower kind"), KINDS - used_kinds(), KINDS]
 	slots[i] = id
 	return ""
 
 
 ## Puts `id` in the filled slot `i` in place of its species. "" when done, else why not.
 func replace(i: int, id: StringName) -> String:
+	over = ""
 	if slots[i] == &"":
 		return "Slot %d is empty: place it there." % i
 	var why := _can_take(id)
@@ -139,7 +151,8 @@ func replace(i: int, id: StringName) -> String:
 	var k := kinds_of(id)
 	var free := KINDS - used_kinds() + kinds_of(slots[i])
 	if k > free:
-		return "%s brings %d flower kinds; %d of %d are free with %s gone." % [id, k, free, KINDS, slots[i]]
+		over = "kinds"
+		return "%s brings %s; %d of %d are free with %s gone." % [id, _n(k, "flower kind"), free, KINDS, slots[i]]
 	if fallback == slots[i]:
 		fallback = &""
 	slots[i] = id
@@ -149,6 +162,7 @@ func replace(i: int, id: StringName) -> String:
 ## Makes every inactive species of `ids` active, in order, in the free slots: all of them or none. `label` names them
 ## in the refusal (a pack's name).
 func fill(ids: Array, label: String) -> String:
+	over = ""
 	var todo: Array[StringName] = []
 	for id in ids:
 		var sid := StringName(id)
@@ -160,8 +174,10 @@ func fill(ids: Array, label: String) -> String:
 	for id in todo:
 		k += kinds_of(id)
 	if todo.size() > free_slots() or used_kinds() + k > KINDS:
-		return "%s doesn't fit. It needs %d slots and %d flower kinds; %d slots and %d kinds are free." \
-			% [label, todo.size(), k, free_slots(), KINDS - used_kinds()]
+		over = ",".join(PackedStringArray((["species"] if todo.size() > free_slots() else [])
+			+ (["kinds"] if used_kinds() + k > KINDS else [])))
+		return "%s doesn't fit. It needs %s and %s; %s and %s are free." % [label, _n(todo.size(), "slot"),
+			_n(k, "flower kind"), _n(free_slots(), "slot"), _n(KINDS - used_kinds(), "kind")]
 	for id in todo:
 		slots[slots.find(&"")] = id
 	return ""
@@ -196,9 +212,14 @@ func snapshot() -> Dictionary:
 	return {"slots": slots.duplicate(), "fallback": fallback}
 
 
+## Back to a snapshot().
 func restore(s: Dictionary) -> void:
 	slots.assign(s["slots"])
 	fallback = s["fallback"]
+
+
+static func _n(n: int, word: String) -> String:
+	return "%d %s%s" % [n, word, "" if n == 1 else "s"]
 
 
 func _can_take(id: StringName) -> String:

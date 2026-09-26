@@ -34,8 +34,8 @@ any point, for footsteps and tyre effects.
 ## Quick start
 
 1. Create a `GrassBladesConfig` resource at `res://waailand_config.tres` (or elsewhere, and name its path in the
-   project setting `waailand/config_path`). Leave its `packs` empty for now: with no pack in use, the grass grows
-   the built-in starter pack.
+   project setting `waailand/config_path`). Leave its `packs` empty for now: the first time the editor loads the
+   grass it writes the project's slot table (`res://grass_species_slots.json`) with the built-in starter grass active.
 2. Add a `GrassBlades` node as a child of your `Terrain3D` node (it finds the terrain up its parent chain; or set its
    `terrain`).
 3. The grass grows at once, in the editor (a preview on the editor's camera) and in the game.
@@ -96,7 +96,7 @@ light without grain (a bake made for other species is reported with a warning an
   script extending `GrassDecorationMeshBuilder`.
 - A **pack** is a `GrassSpeciesPack`: its species, the fallback species (grown where a mix cannot grow, along road
   verges and for a stray index), and the default mix (what a ground with no rule grows). List packs in the config's
-  `packs`, or install them as pack addons (below); species ids must be unique across every pack in use.
+  `packs`, or install them as pack addons (below); species ids must be unique across every installed pack.
 
 **Pack addons.** Packs can ship as an addon of their own: a folder in `res://addons/` with a `waailand_packs.tres`
 at its root, a `GrassPackSet` that lists the addon's packs in order. A set holds one pack or many (a mega pack), each
@@ -110,14 +110,28 @@ addons/coastal_grasses/
 ```
 
 Install it by dropping the folder in (from the Asset Library, as a copy or as a git submodule); there is no plugin to
-enable. The packs in use are the config's `packs` first, then each pack addon's (sorted by folder, each set's packs in
-its own order), less the config's `disabled_packs`: `res://` paths of a whole set (its `waailand_packs.tres`) or of
-single packs. When none is left, the starter pack grows; it can be disabled too. `GrassBladesConfig.resolved_packs()`
-returns them.
+enable. The installed packs are the config's `packs` first, then each pack addon's (sorted by folder, each set's packs
+in its own order), then the starter grass, less the config's `disabled_packs`: `res://` paths of a whole set (its
+`waailand_packs.tres`) or of single packs. `GrassBladesConfig.installed_packs()` returns them, and
+`installed_sources()` groups them by where they come from. Installing a pack costs nothing: its species grow only once
+they are active.
 
-To make a species, duplicate one, change it and add it to a pack. Each species gets a permanent slot the grass maps
-store, kept in the project's slot table (`slots_path`, written by the editor), so painted grass never turns into
-another species.
+**Active species.** Up to 32 species are active at a time, bringing at most 32 kinds of flowers between them. The
+**Species** dialog (the Grass workspace's panel, "Species…") shows every installed species in a tree of its packs,
+with a search and layer filters, beside the 32 slots: drag a species onto a slot, or a whole pack by its handle (all
+of it or nothing); double-click a species for the first free slot; drag a slot out to empty it; right-click a slot to
+make its species the fallback. Only active species grow, appear in the Grass library and the Ground rules dialog, and
+bring their flowers. A growth table or ground rule naming an installed species that is not active grows nothing of it,
+and the dialog lists such names. Every change is written at once and is one undo step.
+
+The active set is the project's slot table (`slots_path`): each species' slot, which is what the grass maps store for
+a painted texel, and the fallback. Giving a slot to another species changes what grass painted on it grows (the
+dialog asks first); an emptied slot's paint grows the fallback. The table only changes through the dialog. A species
+it names that no installed pack has any more shows as missing until its slot is emptied or its pack is installed
+again. Tools and tests whose config has no `slots_path` get every pack's species on the lowest slots
+(`resolved_packs()`).
+
+To make a species, duplicate one, change it, add it to a pack and make it active.
 
 **Pictures.** The Grass library shows each species' picture from its pack's `pictures/` folder. Select a pack in the
 FileSystem dock: the inspector lists the missing and stale pictures, and **Render missing and stale pictures**
@@ -153,8 +167,8 @@ With Terrain3D Extended installed, the plugin adds a **Grass** workspace: Specie
 species), Remove (no grass at all), Density, Height, Smooth, Force (grow whatever the ground), Replace (swap one
 painted species for another), Reset (back to the ground's rule) and Pick (take the species under the cursor); ctrl
 inverts a tool. The panel holds the species library with pictures and hover cards, the slope and elevation limits, a
-region fill, and the preview's date. Each stroke is one undo step; the maps are saved with the scene, one image per
-region beside Terrain3D's region files.
+region fill, and the preview's date, and opens the Species and Ground rules dialogs. Each stroke is one undo step; the
+maps are saved with the scene, one image per region beside Terrain3D's region files.
 
 The panel's **Ground / Water** switch picks the layer the tools paint: Water shows the surface species in the
 library, paints the water maps (their own images, in `<maps_folder>_water`) and lands the stroke where the view ray

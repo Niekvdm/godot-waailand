@@ -16,6 +16,7 @@ const PackInspector := preload("res://addons/waailand/editor/species_pack_inspec
 var _menu: GrassPreviewMenu
 var _paint: GrassPaintProvider
 var _dialog: GroundRulesDialog = null
+var _species: GrassSpeciesDialog = null
 var _blades_root: Node = null        # the edited scene _blades_found was found in
 var _blades_found: GrassBlades = null
 var _pack_inspector: EditorInspectorPlugin = null   # a species pack's pictures
@@ -42,6 +43,8 @@ func _exit_tree() -> void:
 		load(PROVIDERS).unregister(_paint)
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.queue_free()
+	if _species != null and is_instance_valid(_species):
+		_species.queue_free()
 	_paint = null
 	if _menu != null:
 		remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _menu)
@@ -66,6 +69,7 @@ func _register_paint() -> void:
 	_paint.set_undo(get_undo_redo())
 	_paint.blades_of = _blades
 	_paint.ground_rules_requested.connect(_open_ground_rules)
+	_paint.species_requested.connect(_open_species)
 	_paint.map_date = func() -> float:
 		var b := _blades()
 		return b.season.map_date if b != null else -1.0
@@ -121,3 +125,25 @@ func _open_ground_rules() -> void:
 		_dialog = null
 		_paint._refresh())
 	EditorInterface.get_base_control().add_child(_dialog)
+
+
+## The Species dialog (the project's active species), over the editor like the Ground rules dialog.
+func _open_species() -> void:
+	if _species != null and is_instance_valid(_species):
+		return
+	_species = GrassSpeciesDialog.new()
+	_species.setup(GrassSpeciesDialog.context_for(load(UX_COMPONENTS), _blades(), _paint.picture_of, _on_species_saved))
+	_species.closed.connect(func() -> void:
+		_species = null
+		_paint._refresh())
+	EditorInterface.get_base_control().add_child(_species)
+
+
+## The table was written: the grass of every open scene in the tree takes the new set now (a background tab's when it
+## comes back, GrassSpeciesCatalog.generation), and the Grass panel's library with it.
+func _on_species_saved() -> void:
+	for n in EditorInterface.get_base_control().get_tree().get_nodes_in_group(GrassBlades.GROUP):
+		if n is GrassBlades:
+			(n as GrassBlades).reload_species()
+	if _paint != null:
+		_paint.reload_species()

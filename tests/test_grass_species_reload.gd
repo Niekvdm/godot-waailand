@@ -3,8 +3,9 @@
 class_name TestGrassSpeciesReload
 extends GrassSuite
 ## The active set changed (the Species dialog): the grass and the Grass panel take the new species at once. GrassBlades
-## builds its type rows, flowers and colours again from the config's catalog; the panel's library follows, the bar is
-## told, each layer's selection stays when its species is still active.
+## builds its type rows, flowers and colours again from the config's catalog, and reads its growth again (a name grows
+## only while active); a GrassBlades built on an older set (a background scene tab) takes the new one when it is ready
+## again; the panel's library follows, the bar is told, each layer's selection stays when its species is still active.
 
 
 static func run() -> Dictionary:
@@ -58,4 +59,37 @@ func test_the_panel_reloads() -> void:
 	assert_true(names.has("r reed") and not names.has("r lawn"), "the library lists the new set (%s)" % [names])
 	assert_eq(fired[0], 1, "the bar is told")
 	assert_eq(p.types.row(p.library_selected())["name"], "r_meadow", "a species still active stays selected")
+	GrassBladesConfig.use(keep)
+
+
+## A slot table of `table` among r_lawn and r_reed, and a growth table growing r_reed on X.
+func _table_config(table: Dictionary, slots: String, growth: String) -> GrassBladesConfig:
+	var cfg := _config(["r_lawn", "r_reed"])
+	GrassSlotTable.save_file(slots, table)
+	cfg.slots_path = slots
+	cfg.growth_path = growth
+	cfg.disabled_packs = cfg.disabled_packs + PackedStringArray([cfg.starter_pack_path()])
+	return cfg
+
+
+func test_the_growth_and_a_background_tab() -> void:
+	var keep := GrassBladesConfig.current()
+	var slots := "user://test_grass_species_reload_slots.json"
+	var growth := "user://test_grass_species_reload_growth.json"
+	var f := FileAccess.open(growth, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"slots": {"X": {"density": 1.0, "species": {"r_reed": 1.0}}}}))
+	f.close()
+	GrassBladesConfig.use(_table_config({"r_lawn": 0}, slots, growth))
+	var b := GrassBlades.new()
+	assert_eq(b.growth.mix_for("X", 0.0), {}, "r_reed installed, not active: X grows nothing")
+	GrassBladesConfig.use(_table_config({"r_lawn": 0, "r_reed": 1}, slots, growth))
+	b.reload_species()
+	assert_eq(b.growth.mix_for("X", 0.0), {"r_reed": 1.0}, "made active: the growth grows it")
+	GrassBladesConfig.use(_table_config({"r_reed": 1}, slots, growth))
+	GrassSpeciesCatalog.generation += 1
+	b._ready()                    # a background tab back in the tree (no terrain here: it stops after the species)
+	assert_true(not b.types.names().has("r_lawn") and b.types.names().has("r_reed"), "an older set is taken again when ready")
+	b.free()
+	DirAccess.remove_absolute(slots)
+	DirAccess.remove_absolute(growth)
 	GrassBladesConfig.use(keep)

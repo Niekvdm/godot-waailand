@@ -208,6 +208,7 @@ var _types_up := GrassUploadGate.new()
 var _types_bytes := PackedByteArray()
 var _types_bytes_gen := 0        # the generation _types_bytes was packed from
 var _types_mat_gen := 0          # the generation the blade material's arrays were set from
+var _species_gen := GrassSpeciesCatalog.generation   # the active set `types` was built from (reload_species)
 var _sent := {}                  # uniform -> the value last sent (the blade material, and the flowers')
 var _slot_mixes := []            # per texture id {type slot: weight}: the far field's per-slot table
 var _mix_f := PackedFloat32Array()   # _mix as floats, for the query
@@ -303,20 +304,27 @@ func colour_texture() -> Texture2DArray:
 ## colours and the growth tables are built again from the config's catalog, and in the tree the GPU side with them.
 ## The editor calls it; a game loads its set once.
 func reload_species() -> void:
-	var old := decorations
 	if _live:
 		_live = false
-		RenderingServer.call_on_render_thread(_rt_free.bind(old))
+		RenderingServer.call_on_render_thread(_rt_free.bind(decorations))
+	_rebuild_species()
+	if is_inside_tree():
+		_ready()
+
+
+## The species side of reload_species (the GPU side is _ready's): the rows, the flowers' streams, the colours, and the
+## growth read again, since its names grow only while active.
+func _rebuild_species() -> void:
+	_species_gen = GrassSpeciesCatalog.generation
 	types = GrassTypes.new()
 	decorations = DecorationStreams.new()
+	growth = GrassTerrainGrowth.from_rules(rules) if rules != null else GrassTerrainGrowth.new()
 	_colour_tex = null
 	_season_dirty = true
 	_types_up.mark()
 	if material != null:
 		material.set_shader_parameter("colour_tex", colour_texture())
 		material.set_shader_parameter("type_mean_luma", GrassColour.mean_luma(types))
-	if is_inside_tree():
-		_ready()
 
 
 ## Call after editing `types` rows directly: the type tables are rebuilt and re-sent on the next dispatch.
@@ -343,6 +351,8 @@ func _ready() -> void:
 	# ONE flag decides every editor branch, so no fix can sit behind a scattered is_editor_hint() gate that the
 	# editor never reaches.
 	_editor = force_editor or Engine.is_editor_hint()
+	if _species_gen != GrassSpeciesCatalog.generation:
+		_rebuild_species()        # the active set changed while this scene was in a background tab
 	farfield.direct = _editor         # the editor's far field never writes the terrain material's saved table
 	if not _editor:
 		process_priority = 1000     # after anything that moves the camera this frame (the editor's camera is
@@ -781,7 +791,8 @@ func _notification(what: int) -> void:
 func _exit_tree() -> void:
 	farfield.unbind()
 	_live = false
-	RenderingServer.call_on_render_thread(_rt_free)
+	# The streams bound now: re-entry may replace `decorations` before the render thread runs this.
+	RenderingServer.call_on_render_thread(_rt_free.bind(decorations))
 	# Back in the tree (the editor's scene tabs take the edited scene out and put it back), _ready runs again
 	# and rebuilds what _rt_free released. The game never re-enters.
 	request_ready()

@@ -60,6 +60,7 @@ func test_the_budgets() -> void:
 	assert_eq(a.used_slots(), 32, "all 32 slots")
 	var no := a.place(&"g33")
 	assert_true(no.contains("No free slot"), "the 33rd is refused: %s" % no)
+	assert_eq(a.over, "species", "the species budget")
 	var d := GrassActiveSet.new(_installed() + [_sp("more", 20)])
 	d.place(&"tulips")
 	d.place(&"meadow")
@@ -68,7 +69,9 @@ func test_the_budgets() -> void:
 	assert_true(k.contains("20 flower kinds") and k.contains("19 of 32 are free"),
 		"past 32 kinds: refused, with what it brings and what is free (%s)" % k)
 	assert_eq(d.slot_of(&"more"), -1, "and not placed")
+	assert_eq(d.over, "kinds", "the flower kinds budget")
 	assert_eq(d.replace(d.slot_of(&"tulips"), &"more"), "", "in place of the tulips it fits (2 + 20)")
+	assert_eq(d.over, "", "done: no budget passed")
 
 
 func test_replace_empty_and_fallback() -> void:
@@ -94,6 +97,13 @@ func test_fill_all_or_nothing() -> void:
 	assert_true(no.contains("Pond doesn't fit") and no.contains("4 slots") and no.contains("3 slots"),
 		"four species into three free slots: refused, saying so (%s)" % no)
 	assert_eq(a.slot_of(&"lawn"), -1, "and nothing placed")
+	assert_eq(a.over, "species", "the slots, not the kinds (3 of 32)")
+	var b := GrassActiveSet.new(_installed() + [_sp("big", 20)])
+	b.place(&"tulips")
+	b.place(&"big")
+	assert_true(b.fill([&"lawn", &"meadow"], "Pond").contains("3 flower kinds; 30 slots and 1 kind are free"),
+		"31 kinds and 3 more: refused")
+	assert_eq(b.over, "kinds", "the kinds, not the slots")
 	assert_eq(a.fill([&"lawn", &"meadow", &"g00"], "Pond"), "", "the inactive ones fit")
 	assert_eq([a.slot_of(&"lawn"), a.slot_of(&"meadow"), a.used_slots()], [29, 30, 31], "in order, the active one skipped")
 

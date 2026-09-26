@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0 (2026-09-26)
+
+- Installed and active species: any number of packs can be installed, and none costs anything until its species are
+  active. The slot table (`slots_path`) is the active set, up to 32 species bringing up to 32 flower kinds, and it no
+  longer grows when a pack is installed; a project without one starts with the starter grass active (the editor
+  writes it). `GrassBladesConfig.installed_packs()` and `installed_sources()`; `GrassActiveSet`, the set as a model.
+- The Species dialog (the Grass panel's "Species…"): the installed packs as a tree with a search and layer filters,
+  and the 32 slots. Drag a species or a whole pack in (all or nothing), a slot out; a filled slot asks before it is
+  replaced; a right-click makes the fallback; a change past a budget is refused, saying what it needs and what is
+  free. Every change is written at once and is one undo step; the editor's grass and its library follow at once
+  (`GrassBlades.reload_species()`), a scene in a background tab when it comes back.
+- The fallback can be chosen: the slot table's `"fallback"`.
+- A mix naming an installed species that is not active skips it (a mix of only such names grows nothing); ground rules
+  keep such names. A slot whose species no installed pack has is reported as missing.
+- Species' cards name their water: floating, the depth under water, or the water they stand in.
+
 ## 1.3.0 (2026-09-26)
 
 - Water sources: `GrassBlades.set_water(source)` (duck-typed, like the roads: outlines, surface heights, kinds) and a

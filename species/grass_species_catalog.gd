@@ -16,6 +16,10 @@ var errors: PackedStringArray = []
 var grew := false                       # the table gained a species (build only)
 var missing := PackedStringArray()      # table ids no installed pack has (build_active)
 
+## The active set's version in this editor session: the Species dialog bumps it after writing the table. A GrassBlades
+## built on an older one takes the new set when it enters the tree again (a background scene tab).
+static var generation := 0
+
 
 ## The catalog of the project's GrassBladesConfig: the slot table's species among the installed packs (build_active).
 ## No table file yet: the starter grass is the active set (the editor writes the file then; a game uses it for the

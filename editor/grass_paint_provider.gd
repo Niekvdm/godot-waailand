@@ -11,6 +11,7 @@ extends RefCounted
 signal preview_changed            # the plugin keeps GrassEditorPreview in the project metadata
 signal tool_done(tool_id: String)  # a one-shot tool (Pick) finished: the overlay returns to the tool before
 signal ground_rules_requested     # "Ground rules…": the plugin opens the open map's dialog
+signal species_requested          # "Species…": the plugin opens the Species dialog (the project's active species)
 signal library_changed            # the layer switched: the bar reads library() again (Terrain3D Extended 1.1)
 
 ## The layer the Grass tools paint: the ground's grass, or what floats on water.
@@ -372,6 +373,8 @@ func build_settings(box: VBoxContainer, p_tool: String, kit: Object, accent: Col
 		lb.pressed.connect(func() -> void: set_layer(l))
 		lr.add_child(lb)
 	box.add_child(lr)
+	if _layer_palette().is_empty():
+		box.add_child(_hint(_none_active_text()))
 	_water_hint = null
 	if layer == Layer.WATER:
 		_water_hint = _hint(NO_WATER_HINT)
@@ -417,10 +420,16 @@ func build_settings(box: VBoxContainer, p_tool: String, kit: Object, accent: Col
 			box.add_child(_hint(PICK_HINT))
 	if p_tool != "grass.pick":
 		_limits(box, kit, accent)
+	var dialogs := HBoxContainer.new()
+	var sp: Button = kit.chip("Species…", false, accent)
+	sp.tooltip_text = "Which installed species are active (the 32 slots)"
+	sp.pressed.connect(func() -> void: species_requested.emit())
+	dialogs.add_child(sp)
 	var gr: Button = kit.chip("Ground rules…", false, accent)
 	gr.tooltip_text = "What grows on this map's surfaces, and its species' seasons"
 	gr.pressed.connect(func() -> void: ground_rules_requested.emit())
-	box.add_child(gr)
+	dialogs.add_child(gr)
+	box.add_child(dialogs)
 	_season(box, kit, accent)
 	box.add_child(kit.section("Preview"))
 	box.add_child(_toggle(kit, "Show grass", GrassEditorPreview.visible, set_preview_visible))
@@ -475,6 +484,17 @@ func _season(box: VBoxContainer, kit: Object, accent: Color) -> void:
 				(b as Button).disabled = true
 		_day_slider.editable = false
 		_day_label.text = GrassSeason.label(fixed)
+
+
+## The selected layer has no active species: what the Species dialog offers.
+func _none_active_text() -> String:
+	var want := GrassTypes.LAYER_SURFACE if layer == Layer.WATER else GrassTypes.LAYER_GROUND
+	var inst := GrassSpeciesCatalog.installed_layers()
+	var n := inst.values().filter(func(l): return int(l) == want).size()
+	var what := "floating species" if layer == Layer.WATER else "species"
+	if n == 0:
+		return "No %s is installed: a pack brings some." % what
+	return "No %s is active. Species… to choose from %d installed." % [what, n]
 
 
 ## Replace's "From": the palette's species, the one it swaps from selected.
