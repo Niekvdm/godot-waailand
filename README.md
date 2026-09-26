@@ -179,10 +179,12 @@ carry; the sea's is `Zee`): a density and a mix of surface species. A kind with 
 ## Painting
 
 With Terrain3D Extended 1.2 or newer installed, the plugin adds a **Grass** workspace. The bar holds what you change
-every stroke: the tools in three groups (Paint, Replace, Erase; Density, Height, Smooth; Force, Remove, Reset; ctrl
-inverts a tool), the species chip (click it for the picker; the eyedropper beside it takes the species under the
+every stroke: the tools in three groups (Paint, Color, Replace; Density, Height, Smooth, Path; Force, Reset; hold Ctrl
+for a tool's opposite, and the bar shows it: Paint removes, Color goes back to Auto), the species chip (click it for the picker; the eyedropper beside it takes the species under the
 cursor), size and strength. The panel holds only the tool's settings: what it
-does, its options and mode, Apply (under the brush or the whole region) and Only where (slope, elevation). Species…
+does, its options and mode, Apply (under the brush or the whole region) and Only where (slope, elevation, grounds).
+Color paints a flower's own colors (a tulip row in red); Inspect (ⓘ on the strip) says on the brush chip what grows
+under the cursor, and why. Species…
 and Ground rules… are behind the panel's ⋯. Each stroke is one undo step; the maps are saved with the scene, one image
 per region beside Terrain3D's region files.
 

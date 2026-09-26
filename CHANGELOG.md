@@ -15,6 +15,18 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
   for its 15th), the date, In bloom with the selected species' flowering windows, every ground; a map's fixed date
   locks it and links its Ground rules.
 - "no water here" on the brush chip in place of the panel's hint. Presets saved by 1.4 keep their meaning.
+- Opposites are one tool: hold Ctrl and the bar shows the opposite (Paint / Remove, Color / Auto color, thicker /
+  thinner, taller / shorter, Path / Grow back, Force / the ground's rules). The Remove and Erase tools are gone: Paint
+  with Ctrl removes, and Reset can reset the species alone.
+- Remove is its own marker (the species byte's 255: nothing grows); painting over it brings the grass back at its
+  painted density and height, and a removal made the old way (density 0) heals when painted.
+- Force grows the chosen species or the ground's own mix; Only where gains Grounds (only on / not on the terrain
+  textures you tick), so Force can leave asphalt alone.
+- Color paints which of a flower's colors grows (the selected species' palette, or Auto: the field's own stripes).
+  Stored in the force byte's low 7 bits; existing maps read as Auto. Flowers and `sample()` honour it; the far-away
+  blade tint keeps the stripe colors (a known gap).
+- Path wears a path (Light, Worn, Bare) and grows it back; Inspect (ⓘ on the view strip) puts what grows under the
+  cursor, and why, on the brush chip.
 - `GrassSeason.spans`; `GrassYearTrack`, `GrassViewStrip`.
 
 ## 1.4.0 (2026-09-26)
