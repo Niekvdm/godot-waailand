@@ -85,3 +85,19 @@ func test_pack_addons_resolve() -> void:
 
 func _names(p_packs: Array) -> Array:
 	return p_packs.map(func(p): return p.name)
+
+
+## The installed packs (what the Species dialog lists; only the slot table's species of them are active): the
+## config's, each set's, then the starter grass always; disabled ones hidden. By source: each config pack its own, a
+## set with its packs (a pack the config also lists counts once, under the config), the starter grass last.
+func test_installed_packs() -> void:
+	var c := GrassBladesConfig.new()
+	var b := load(PACK_ROOT + "/beta/b.tres") as GrassSpeciesPack
+	c.packs = [b] as Array[GrassSpeciesPack]
+	assert_eq(_names(c.installed_packs(PACK_ROOT)), ["B", "A2", "A1", "Starter"], "the starter grass too, last")
+	var src := c.installed_sources(PACK_ROOT)
+	assert_eq(src.map(func(s): return [s["kind"], s["name"], _names(s["packs"])]),
+		[["project", "B", ["B"]], ["addon", "Alpha", ["A2", "A1"]], ["waailand", "Starter grass", ["Starter"]]],
+		"by source: Beta's only pack is the config's")
+	c.disabled_packs = PackedStringArray([PACK_ROOT + "/alpha/a1.tres", c.starter_pack_path()])
+	assert_eq(_names(c.installed_packs(PACK_ROOT)), ["B", "A2"], "disabled packs are hidden")

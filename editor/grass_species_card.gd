@@ -28,7 +28,8 @@ static func make_card(p_card: Texture2D, p_facts: Dictionary) -> Control:
 	return panel
 
 
-## The card's text: the name (and "invented"), the height or what it hosts, the sea depth, the flowers and
+## The card's text: the name (and "invented"), the height or what it hosts, its water (floating, the depth under water
+## or the shallow water it stands in), the flowers and
 ## when they bloom, and the ground that grows it (the four biggest shares).
 static func card_lines(f: Dictionary) -> PackedStringArray:
 	var out := PackedStringArray()
@@ -38,8 +39,12 @@ static func card_lines(f: Dictionary) -> PackedStringArray:
 	else:
 		out.append("%.2f m tall" % float(f.get("height", 0.0)))
 	var depth = f.get("depth")
-	if depth is Vector2:
-		out.append("%s-%s m under the sea" % [_num(depth.x), _num(depth.y)])
+	if bool(f.get("floats", false)):
+		out.append("Floats on water")
+	elif depth is Vector2:
+		out.append("%s-%s m under water" % [_num(depth.x), _num(depth.y)])
+	elif float(f.get("wet", 0.0)) > 0.0:
+		out.append("Stands in water to %s m" % _num(float(f["wet"])))
 	for fl in f.get("flowers", []):
 		out.append("%s: %s" % [String(fl["name"]).replace("_", " ").capitalize(), fl["bloom"]])
 	var grows: Array = f.get("grows_on", [])

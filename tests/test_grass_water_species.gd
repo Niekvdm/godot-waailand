@@ -106,3 +106,16 @@ func test_a_default_mix_takes_ground_species_only() -> void:
 	var c := GrassSpeciesCatalog.build([pack], {}, &"", {"meadow": 0.5, "lily": 0.5})
 	assert_true(c.errors.size() == 1 and c.errors[0].contains("lily"), "the surface species is refused: %s" % [c.errors])
 	assert_eq(c.default_mix.keys(), ["meadow"], "the rest stays")
+
+
+func test_the_card_names_the_layer() -> void:
+	var card = load("res://addons/waailand/editor/grass_species_card.gd")
+	var t := _types([_row("lily", 0, {"layer": "surface"}), _row("rice", 1, {"wet_depth_m": 0.3}),
+		_row("weed", 2, {"depth_m": [0.3, 3.0]})])
+	var kinds := DecoKinds.new("")
+	var growth := GrassTerrainGrowth.new("")
+	assert_true(card.card_lines(GrassSpeciesPreview.facts(t, kinds, growth, 0)).has("Floats on water"), "floating")
+	assert_true(card.card_lines(GrassSpeciesPreview.facts(t, kinds, growth, 1)).has("Stands in water to 0.3 m"),
+		"wet ground")
+	assert_true(card.card_lines(GrassSpeciesPreview.facts(t, kinds, growth, 2)).has("0.3-3 m under water"),
+		"underwater")

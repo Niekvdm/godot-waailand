@@ -27,7 +27,7 @@ static func pack_pictures_dir(p_pack: GrassSpeciesPack) -> String:
 ## The pictures folder of the pack in use that holds species `id` (the first, as GrassSpeciesCatalog.build keeps
 ## the first); "" when none.
 static func pictures_dir(p_id: String) -> String:
-	for pack in GrassBladesConfig.current().resolved_packs():
+	for pack in GrassBladesConfig.current().installed_packs():
 		if pack != null and pack.species.any(func(s): return s != null and String(s.id) == p_id):
 			return pack_pictures_dir(pack)
 	return ""
@@ -183,6 +183,8 @@ static func facts(types: GrassTypes, kinds: DecoKinds, growth: GrassTerrainGrowt
 		if w > 0.0:
 			grows.append({"ground": growth.display_names.get(key, key), "share": w, "above_m": float(b["above_m"])})
 	grows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["share"] > b["share"])
+	var surface := int(row.get("layer", GrassTypes.LAYER_GROUND)) == GrassTypes.LAYER_SURFACE
 	return {"name": nm, "height": float(row.get("height", 0.0)),
-		"depth": Vector2(depth.x, depth.y) if depth.x >= 0.0 else null, "flowers": flowers, "grows_on": grows,
-		"invented": bool(row.get("invented", false)), "host_only": bool(row.get("host_only", false))}
+		"depth": Vector2(depth.x, depth.y) if depth.x >= 0.0 and not surface else null, "flowers": flowers,
+		"grows_on": grows, "invented": bool(row.get("invented", false)), "host_only": bool(row.get("host_only", false)),
+		"floats": surface, "wet": float(row.get("wet_depth_m", 0.0))}

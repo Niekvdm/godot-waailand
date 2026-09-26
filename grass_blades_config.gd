@@ -20,7 +20,9 @@ const SETTING := "waailand/config_path"
 ## The packs this project lists first (pack addons are found without it; see resolved_packs). Species ids must be
 ## unique across every pack in use.
 @export var packs: Array[GrassSpeciesPack] = []
-## The project's slot table: species id -> the slot the grass maps and GPU tables use. The editor writes it.
+## The project's slot table: the ACTIVE species (id -> the slot the grass maps and GPU tables use) and the fallback. The
+## Species dialog edits it; without the file the starter grass is active (the editor writes it then). "": every pack's
+## species on the lowest slots (tools, tests).
 @export_file("*.json") var slots_path := "res://grass_species_slots.json"
 ## Overrides the packs' fallback species (what grows where a mix cannot); empty: the first pack's that sets one.
 @export var fallback_species: StringName = &""
@@ -88,6 +90,48 @@ func resolved_packs(addons_dir := "res://addons") -> Array[GrassSpeciesPack]:
 		var st := load(starter) as GrassSpeciesPack
 		if st != null:
 			out.append(st)
+	return out
+
+
+## Every installed pack, in order: the config's `packs`, each pack addon's set (sorted by folder) in the set's own
+## order, then the starter grass; less `disabled_packs` (hidden); a pack counts once. What the Species dialog lists:
+## installed packs cost nothing, only the slot table's species of them are active.
+func installed_packs(addons_dir := "res://addons") -> Array[GrassSpeciesPack]:
+	var out: Array[GrassSpeciesPack] = []
+	for s in installed_sources(addons_dir):
+		out.append_array(s["packs"])
+	return out
+
+
+## The installed packs by where they come from, in order: [{name, kind ("project": a pack the config lists; "addon": a
+## pack addon's set; "waailand": the starter grass), path, packs: Array[GrassSpeciesPack]}]; a source whose packs are
+## all hidden or counted already is left out.
+func installed_sources(addons_dir := "res://addons") -> Array:
+	var out := []
+	var seen := {}
+	for p in packs:
+		if p != null and not seen.has(_key(p)) and not disabled_packs.has(p.resource_path):
+			seen[_key(p)] = true
+			var one: Array[GrassSpeciesPack] = [p]
+			out.append({"name": String(p.name), "kind": "project", "path": p.resource_path, "packs": one})
+	for path in discovered_set_paths(addons_dir):
+		var pack_set := load(path) as GrassPackSet if not disabled_packs.has(path) else null
+		if pack_set == null:
+			continue
+		var mine: Array[GrassSpeciesPack] = []
+		for p in pack_set.packs:
+			if p != null and not seen.has(_key(p)) and not disabled_packs.has(p.resource_path):
+				seen[_key(p)] = true
+				mine.append(p)
+		if not mine.is_empty():
+			var nm := pack_set.name if pack_set.name != "" else path.get_base_dir().get_file()
+			out.append({"name": nm, "kind": "addon", "path": path, "packs": mine})
+	var starter := starter_pack_path()
+	if not disabled_packs.has(starter) and ResourceLoader.exists(starter):
+		var st := load(starter) as GrassSpeciesPack
+		if st != null and not seen.has(_key(st)):
+			var one: Array[GrassSpeciesPack] = [st]
+			out.append({"name": "Starter grass", "kind": "waailand", "path": starter, "packs": one})
 	return out
 
 

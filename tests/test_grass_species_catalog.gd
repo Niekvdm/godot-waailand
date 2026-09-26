@@ -79,3 +79,59 @@ func test_the_cap() -> void:
 	var c := GrassSpeciesCatalog.build([_pack("Big", ids)], {})
 	assert_true(c.species.size() == 32 and c.errors.size() == 1 and c.errors[0].contains("s32"),
 		"33 species: 32 in use, one error naming the one left out (%s)" % [c.errors])
+
+
+## The active set (build_active): the table's species found among the installed packs, on their slots, in the packs'
+## order; the rest installed but not active; a table id no pack has is missing; nothing is assigned. The fallback: the
+## table's (or the config's) when active, else the first pack's that is active, else the first active species; a pack's
+## default mix keeps its active names.
+func test_the_active_set() -> void:
+	var a := _pack("A", ["lawn", "meadow"], &"meadow", {"lawn": 1.0, "meadow": 1.0})
+	var b := _pack("B", ["reed", "fern"])
+	var c := GrassSpeciesCatalog.build_active([a, b], {"reed": 7, "lawn": 2, "gone": 5})
+	assert_eq(c.species.map(func(s): return String(s.id)), ["lawn", "reed"], "only the table's, in the packs' order")
+	assert_eq([c.slot_of(&"lawn"), c.slot_of(&"reed"), c.slot_of(&"meadow")], [2, 7, -1],
+		"on their slots; meadow is installed, not active")
+	assert_true(not c.grew, "nothing assigned")
+	assert_eq(Array(c.missing), ["gone"], "a species no pack has is missing")
+	assert_true(c.errors.size() == 1 and c.errors[0].contains("gone") and c.errors[0].contains("5"),
+		"with one error naming it and its slot (%s)" % [c.errors])
+	assert_eq(c.fallback, &"lawn", "the pack's fallback is not active: the first active species")
+	assert_eq(c.default_mix, {"lawn": 1.0}, "the pack's default mix, its active names")
+	var d := GrassSpeciesCatalog.build_active([a, b], {"lawn": 0, "meadow": 1}, &"meadow")
+	assert_eq([d.fallback, d.errors.size()], [&"meadow", 0], "the table's fallback")
+	var e := GrassSpeciesCatalog.build_active([a, b], {"lawn": 0}, &"reed")
+	assert_true(e.fallback == &"lawn" and e.errors.size() == 1 and e.errors[0].contains("reed"),
+		"a fallback that is not active: an error, the first active species (%s)" % [e.errors])
+
+
+## from_config: a table file is the active set; no file yet: the starter grass (written by the editor only); no
+## slots_path (tools, tests): every pack's species on the lowest slots.
+func test_from_config_reads_the_table() -> void:
+	var keep := GrassBladesConfig.current()
+	var cfg := GrassBladesConfig.new()
+	cfg.packs.assign([_pack("A", ["lawn", "meadow"], &"meadow"), _pack("B", ["reed"])])
+	cfg.disabled_packs = GrassBladesConfig.discovered_set_paths()
+	var p := "user://test_species_catalog_slots.json"
+	GrassSlotTable.save_file(p, {"reed": 4, "meadow": 0}, &"reed")
+	cfg.slots_path = p
+	GrassBladesConfig.use(cfg)
+	var c := GrassSpeciesCatalog.from_config()
+	assert_eq(c.species.map(func(s): return String(s.id)), ["meadow", "reed"], "the table's species")
+	assert_eq([c.slot_of(&"reed"), c.fallback], [4, &"reed"], "its slots and its fallback")
+	DirAccess.remove_absolute(p)
+	var fresh := "user://test_species_catalog_none.json"
+	cfg.slots_path = fresh
+	var f := GrassSpeciesCatalog.from_config()
+	assert_eq(f.species.map(func(s): return String(s.id)), ["lawn", "meadow", "tall_grass", "tufts", "daisies"],
+		"no table yet: the starter grass")
+	assert_true(not FileAccess.file_exists(fresh), "a game (not the editor) does not write it")
+	cfg.slots_path = ""
+	assert_eq(GrassSpeciesCatalog.from_config().species.size(), 3, "no slots_path: every pack's species")
+	GrassBladesConfig.use(keep)
+
+
+func test_no_active_species() -> void:
+	var t := GrassTypes.from_catalog(GrassSpeciesCatalog.build_active([_pack("A", ["lawn"])], {}))
+	assert_eq(float(t.row(0).get("density", -1.0)), 0.0, "an empty set: every slot reads a row that grows nothing")
+	assert_eq(t.to_bytes().size(), GrassTypes.SLOTS * GrassTypes.VEC4 * 16, "and the tables still pack")

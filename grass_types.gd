@@ -233,10 +233,29 @@ func depth_table() -> Array:
 	return out
 
 
+## Slot i's row; an empty slot reads the fallback's; with no fallback either (no species active), a row that grows
+## nothing (density 0), so the tables still pack.
 func row(i: int) -> Dictionary:
 	if i >= 0 and i < SLOTS and not rows[i].is_empty():
 		return rows[i]
-	return rows[fallback_slot]
+	if fallback_slot >= 0 and fallback_slot < SLOTS and not rows[fallback_slot].is_empty():
+		return rows[fallback_slot]
+	return _nothing()
+
+
+static var _nothing_row := {}
+
+
+## The row that grows nothing: a default species' at density 0.
+static func _nothing() -> Dictionary:
+	if _nothing_row.is_empty():
+		var r := GrassSpecies.new().to_row_json(0)
+		r["name"] = ""
+		r["density"] = 0.0
+		var t := GrassTypes.new("")
+		t._load_doc({"types": [r]})
+		_nothing_row = t.rows[0]
+	return _nothing_row
 
 
 func names() -> PackedStringArray:
