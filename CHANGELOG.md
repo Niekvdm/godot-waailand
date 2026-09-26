@@ -6,7 +6,7 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
 
 - The Grass workspace, reorganised by what changes when. The bar: the tools in three groups (Paint: Paint, Replace,
   Erase; Shape: Density, Height, Smooth; Rules: Force, Remove, Reset), the species chip with a picker (a search, the
-  favourites, the species by pack, hover cards), your last five species, the eyedropper (Pick), and Replace's From.
+  favourites, the species by pack, hover cards), the eyedropper (Pick), and Replace's From.
 - The panel holds only the tool's settings: a line saying what it does, its brush options, its mode (Density and
   Height: Thicker/Taller, Thinner/Shorter, Back to ×1; Smooth: Density or Height), Apply (under the brush or the whole
   region) and Only where (slope and elevation, each a switch and one range). Ground | Water and an empty layer's banner

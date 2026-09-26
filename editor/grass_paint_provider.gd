@@ -322,7 +322,7 @@ func mode_for(p_tool: String, p_invert: bool) -> GrassPaintTool.Mode:
 
 
 ## The species as the library: each with its picture (its colour when there is none), a hover card and its pack (the
-## picker's group); per layer its own key (favourites, order, recents), the footer and its action (Species…).
+## picker's group); per layer its own key (favourites, order), the footer and its action (Species…).
 func library() -> Dictionary:
 	_load_kinds()
 	var items := []
