@@ -195,9 +195,15 @@ library, paints the water maps (their own images, in `<maps_folder>_water`) and 
 meets the water surface. Over ground with no water the Water layer paints nothing, and the brush chip says so.
 
 The strip at the top of the 3D view sets what the preview shows: the grass on or off, the date (drag the year, or a
-month letter for its 15th; In bloom jumps to the selected species in flower), and every ground (to see what a species
-would look like anywhere). A map whose Ground rules fix the date shows it locked. The 3D toolbar's **Grass** menu does
-the same outside the Grass workspace.
+month letter for its 15th; the track marks the selected species' flowering windows), In bloom (every species with
+flowers in bloom, whatever the date), and every ground (to see what a species would look like anywhere). A map whose
+Ground rules fix the date shows it locked. The 3D toolbar's **Grass** menu does the same outside the Grass workspace.
+
+The strip's **paint overlay** (the layers button) shows what the maps hold, on the ground, with the grass hidden while
+it shows; ▾ picks what and holds the key. *What's painted*: each painted species in its own tint, removed ground in red
+hatching, forced ground with orange stripes, a painted flower color with white dots. *Density* and *Height*: blue where
+thinner or shorter, warm where thicker or taller, clear at ×1. It follows every stroke, and it is drawn by the far
+field's include (below), so it needs the far field in the terrain shader; without it the button says so.
 
 ## Feeding the grass
 

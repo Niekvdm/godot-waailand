@@ -29,6 +29,7 @@ GRASS = {
     'grass_path': '<path d="M2.5 21 H21.5" fill="none"/><path d="M3.6 21 C3.6 19 3.3 17.8 2.6 16.8 M20.4 21 C20.4 19 20.7 17.8 21.4 16.8" fill="none"/><path d="M8.6 4.2 C10.2 4.2 11 6 11 8.4 C11 10.4 10.1 11.6 8.6 11.6 C7.1 11.6 6.4 10.2 6.6 8.2 C6.8 5.8 7.4 4.2 8.6 4.2 Z"/><path d="M7.2 13.4 H10.2 C10.4 15 9.8 16.2 8.7 16.2 C7.6 16.2 7 15 7.2 13.4 Z"/><path d="M15.4 8.2 C17 8.2 17.8 10 17.8 12.4 C17.8 14.4 16.9 15.6 15.4 15.6 C13.9 15.6 13.2 14.2 13.4 12.2 C13.6 9.8 14.2 8.2 15.4 8.2 Z"/><path d="M14 17.4 H17 C17.2 19 16.6 20 15.5 20 C14.4 20 13.8 19 14 17.4 Z"/>',
     'grass_path_back': '<path d="M2.5 21 H13" fill="none"/><path d="M4.4 21 C4.4 17.4 3.9 15.3 2.7 13.7 C4.9 14.8 5.9 16.9 6.2 19.3" fill="none"/><path d="M8 21 C8 16.4 8.9 13.2 11 10.8 C10.1 14.2 10.1 17.5 10.4 21 Z"/><path d="M15 11 L18 8 L21 11 M15 16 L18 13 L21 16" fill="none"/>',
     'grass_force_off': '<path d="M2.5 16.5 H21.5 V21 H2.5 Z"/><path d="M11.6 16.5 C11.6 11.8 12.5 8.4 14.8 5.4 C13.9 9.4 13.7 12.8 13.8 16.5 Z" fill-opacity="0" stroke-dasharray="1.6 1.8"/><path d="M11 16.5 C10.8 13.2 9.9 11 8.2 9.4 C10.6 10.2 11.9 12.4 12.1 15" fill="none" stroke-dasharray="1.6 1.8"/>',
+    'view_overlay': '<path d="M12 3.5 L21.5 8.6 L12 13.7 L2.5 8.6 Z"/><path d="M2.5 13.4 L12 18.5 L21.5 13.4" fill="none"/><path d="M12 6.2 L16.6 8.6 L12 11 L7.4 8.6 Z" fill-opacity="1" stroke="none"/>',
     'view_inspect': '<circle cx="12" cy="12" r="9"/><path d="M12 11 V17" fill="none"/><circle cx="12" cy="7.4" r="1.25" fill="#FF00FF" fill-opacity="1" stroke="none"/>',
 }
 

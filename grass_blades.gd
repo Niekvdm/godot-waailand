@@ -155,6 +155,7 @@ var decorations := DecorationStreams.new()
 var farfield := GrassFarField.new()
 var _far_grain := {}            # GrassFarGrain.load_baked(): {} = no current bake, no grain
 var _far_dirty := true          # the far field's static inputs need a push
+var _overlay := 0               # the paint overlay the far field draws (GrassOverlay.Mode; the editor preview only)
 var _sun_travel := Vector3(0.0, -1.0, 0.0)
 var _gust_tex: ImageTexture
 var _colour_tex: Texture2DArray
@@ -819,12 +820,15 @@ func _process(dt: float) -> void:
 	_dispatch(dt)
 
 
-## Editor mode: the preview's date and visibility (GrassEditorPreview, set by the plugin's menu), and the node's
-## own visibility in the scene tree.
+## Editor mode: the preview's date, visibility and paint overlay (GrassEditorPreview, set by the plugin's menu and the
+## view strip), and the node's own visibility in the scene tree.
 func _preview_tick() -> void:
-	var show := GrassEditorPreview.visible and is_visible_in_tree()
+	var show := GrassEditorPreview.grass_shows() and is_visible_in_tree()
 	if show != grass_visible:
 		set_grass_visible(show)
+	if GrassEditorPreview.overlay != _overlay:
+		_overlay = GrassEditorPreview.overlay
+		_far_dirty = true         # the far field sends it
 	if not is_equal_approx(GrassEditorPreview.day, _day_of_year):
 		_day_of_year = GrassEditorPreview.day
 	if GrassEditorPreview.all_grounds != all_grounds:
@@ -834,8 +838,14 @@ func _preview_tick() -> void:
 		_season_dirty = true
 
 
+## True when the terrain's shader can draw the paint overlay (the far field's include, Waailand 1.5 or newer).
+func overlay_supported() -> bool:
+	return GrassFarField.shader_has(terrain.get("material") if terrain != null else null, &"grass_overlay")
+
+
 ## The far field (GrassFarField): (re)bind the terrain material, push what changed, then the wind, the
-## sun and the blades' fade. On with the blades, off when they are hidden or `far_field` is off.
+## sun and the blades' fade. On with the blades, off when they are hidden or `far_field` is off; on while the paint
+## overlay shows (the editor), which it draws instead.
 func _far_tick() -> void:
 	if terrain == null:
 		return
@@ -847,8 +857,9 @@ func _far_tick() -> void:
 		farfield.set_param(&"far_all_grounds", all_grounds)
 		farfield.push_static(_far_grain, _allow, GrassFarField.type_heights(types), _gust_tex,
 			GrassTerrainGrowth.far_slot_params(_slot_mixes, types, _far_grain), grass_maps.texture())
+		farfield.set_overlay(_overlay)
 		_far_dirty = false
-	var on := far_field and grass_visible and _live
+	var on := (far_field and grass_visible and _live) or _overlay != GrassOverlay.Mode.OFF
 	farfield.set_enabled(on)
 	if not farfield.in_sync():
 		return          # the material does not list the far field's uniforms yet: again next frame

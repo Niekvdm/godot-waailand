@@ -174,6 +174,23 @@ func set_preview_all_bloom(on: bool) -> void:
 	_strip_refresh()
 
 
+## The paint overlay (GrassOverlay.Mode; OFF: none): the preview draws what the maps hold on the terrain, the grass
+## hidden. A mode turned on becomes the one the strip's switch turns on next.
+func set_preview_overlay(p_mode: int) -> void:
+	GrassEditorPreview.overlay = p_mode
+	if p_mode != GrassOverlay.Mode.OFF:
+		GrassEditorPreview.overlay_mode = p_mode
+	preview_changed.emit()
+	_strip_refresh()
+
+
+## True when the open map's terrain shader can draw the paint overlay (GrassBlades.overlay_supported); false without
+## grass in the scene.
+func overlay_supported() -> bool:
+	var b: Object = blades_of.call() if blades_of.is_valid() else null
+	return b is GrassBlades and (b as GrassBlades).overlay_supported()
+
+
 ## Provider API (Terrain3D Extended 1.2): the view strip at the top of the 3D view.
 func build_view(box: HBoxContainer, kit: Object, accent: Color) -> void:
 	_strip = GrassViewStrip.new()
@@ -202,6 +219,11 @@ func bloom_windows() -> Array:
 		var keys: Vector4 = k["bloom"]
 		out.append(Vector2(0.0, GrassSeason.YEAR) if keys.x < 0.0 else Vector2(keys.y, keys.z))
 	return out
+
+
+## The preview changed elsewhere (the Grass menu): the view strip reads it again.
+func sync_view() -> void:
+	_strip_refresh()
 
 
 func _strip_refresh() -> void:

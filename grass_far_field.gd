@@ -107,6 +107,28 @@ func push_frame(wind_uniforms: Dictionary, sun_travel: Vector3, ramp: Vector2, s
 	set_param(&"far_sea_level", sea_level)       # land only: below the sea it adds nothing
 
 
+## True when a terrain material's shader (Terrain3DMaterial) declares `uniform_name`: the far field's include is in it,
+## and new enough.
+static func shader_has(mat: Object, uniform_name: StringName) -> bool:
+	if mat == null or not mat.has_method("get_shader_rid"):
+		return false
+	var sh: RID = mat.call("get_shader_rid")
+	if not sh.is_valid():
+		return false
+	for u in RenderingServer.get_shader_parameter_list(sh):
+		if StringName(u.get("name", "")) == uniform_name:
+			return true
+	return false
+
+
+## The paint overlay (GrassOverlay.Mode; OFF: the far field as usual) and the colors it draws with.
+func set_overlay(mode: int) -> void:
+	set_param(&"grass_overlay", mode)
+	if mode != GrassOverlay.Mode.OFF:
+		set_param(&"grass_overlay_hue", GrassOverlay.hues_linear())
+		set_param(&"grass_overlay_key", GrassOverlay.key_linear())
+
+
 ## Off, then forget the material (GrassBlades leaving the tree).
 func unbind() -> void:
 	if is_bound():

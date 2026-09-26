@@ -10,6 +10,7 @@ const KEY_DAY := "preview_day"
 const KEY_VISIBLE := "preview_visible"
 const KEY_ALL_GROUNDS := "preview_all_grounds"
 const KEY_ALL_BLOOM := "preview_all_bloom"
+const KEY_OVERLAY_MODE := "preview_overlay_mode"   # the mode the overlay turns on in (the overlay itself starts off)
 const PROVIDERS := "res://addons/terrain_3d_extended/src/tool_providers.gd"
 const UX_COMPONENTS := "res://addons/terrain_3d_extended/src/ux_components.gd"
 const PackInspector := preload("res://addons/waailand/editor/species_pack_inspector.gd")
@@ -29,8 +30,10 @@ func _enter_tree() -> void:
 	GrassEditorPreview.visible = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_VISIBLE, true))
 	GrassEditorPreview.all_grounds = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_GROUNDS, false))
 	GrassEditorPreview.all_bloom = bool(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_BLOOM, false))
+	GrassEditorPreview.overlay_mode = clampi(int(es.get_project_metadata(GrassEditorPreview.SECTION, KEY_OVERLAY_MODE,
+		GrassOverlay.Mode.PAINTED)), GrassOverlay.Mode.PAINTED, GrassOverlay.Mode.HEIGHT)
 	_menu = GrassPreviewMenu.new()
-	_menu.changed.connect(_save)
+	_menu.changed.connect(_on_menu_changed)
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _menu)
 	_pack_inspector = PackInspector.new()
 	add_inspector_plugin(_pack_inspector)
@@ -60,6 +63,14 @@ func _save() -> void:
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_VISIBLE, GrassEditorPreview.visible)
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_GROUNDS, GrassEditorPreview.all_grounds)
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_BLOOM, GrassEditorPreview.all_bloom)
+	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_OVERLAY_MODE, GrassEditorPreview.overlay_mode)
+
+
+## The Grass menu changed the preview: kept, and the view strip reads it again.
+func _on_menu_changed() -> void:
+	_save()
+	if _paint != null:
+		_paint.sync_view()
 
 
 ## The grass paint tool lives in the Terrain3D Extended overlay (1.2 or newer): without it there is none (Terrain3D's

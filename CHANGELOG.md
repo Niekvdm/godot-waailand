@@ -12,8 +12,9 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
   region) and Only where (slope and elevation, each a switch and one range). Ground | Water and an empty layer's banner
   sit under its header; Species… and Ground rules… are behind ⋯.
 - The view strip at the top of the 3D view: show grass, the year as one track by season (drag it, or a month letter
-  for its 15th), the date, In bloom with the selected species' flowering windows, every ground; a map's fixed date
-  locks it and links its Ground rules.
+  for its 15th) marking the selected species' flowering windows, the date, In bloom (every species with flowers in
+  bloom for the preview, whatever the date: `GrassSeasonPlan.all_bloom`), every ground; a map's fixed date locks it
+  and links its Ground rules.
 - "no water here" on the brush chip in place of the panel's hint. Presets saved by 1.4 keep their meaning.
 - Opposites are one tool: hold Ctrl and the bar shows the opposite (Paint / Remove, Color / Auto color, thicker /
   thinner, taller / shorter, Path / Grow back, Force / the ground's rules). The Remove and Erase tools are gone: Paint
@@ -23,10 +24,15 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
 - Force grows the chosen species or the ground's own mix; Only where gains Grounds (only on / not on the terrain
   textures you tick), so Force can leave asphalt alone.
 - Color paints which of a flower's colors grows (the selected species' palette, or Auto: the field's own stripes).
-  Stored in the force byte's low 7 bits; existing maps read as Auto. Flowers and `sample()` honour it; the far-away
-  blade tint keeps the stripe colors (a known gap).
+  Stored in the force byte's low 7 bits; existing maps read as Auto. Flowers, the far-away blades' flower tint (the
+  color rides in the blade instance's spare COLOR bits) and `sample()` honour it.
 - Path wears a path (Light, Worn, Bare) and grows it back; Inspect (ⓘ on the view strip) puts what grows under the
   cursor, and why, on the brush chip.
+- The paint overlay (the view strip's layers button, ▾ for the mode and its key; also the Grass menu's "Paint
+  overlay"): what the maps hold, drawn on the terrain with the grass hidden. What's painted (species tints, removed
+  hatched red, forced striped orange, painted colors dotted), Density or Height (blue below ×1, warm above). Drawn by
+  `grass_far.gdshaderinc` (`grass_overlay_apply`), so a terrain shader that includes the far field draws it with no
+  change; the button is off offer on one that does not. `GrassOverlay`, `GrassEditorPreview.overlay`.
 - `GrassSeason.spans`; `GrassYearTrack`, `GrassViewStrip`.
 
 ## 1.4.0 (2026-09-26)

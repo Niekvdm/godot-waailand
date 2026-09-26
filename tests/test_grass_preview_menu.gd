@@ -51,3 +51,25 @@ func test_the_every_ground_switch() -> void:
 		and fired[0] == 1, "it flips the switch, checks itself and tells the plugin")
 	m.free()
 	GrassEditorPreview.all_grounds = keep
+
+
+## "Paint overlay": the overlay can be switched off (and on, in its last mode) outside the Grass workspace, whose view
+## strip holds its modes.
+func test_the_overlay_switch() -> void:
+	var keep := [GrassEditorPreview.overlay, GrassEditorPreview.overlay_mode]
+	GrassEditorPreview.overlay = GrassOverlay.Mode.OFF
+	GrassEditorPreview.overlay_mode = GrassOverlay.Mode.HEIGHT
+	var m := GrassPreviewMenu.new()
+	var fired := [0]
+	m.changed.connect(func(): fired[0] += 1)
+	var p := m.get_popup()
+	var i := p.get_item_index(GrassPreviewMenu.ID_OVERLAY)
+	assert_true(i >= 0 and not p.is_item_checked(i), "the item, off by default")
+	m._on_id(GrassPreviewMenu.ID_OVERLAY)
+	assert_true(GrassEditorPreview.overlay == GrassOverlay.Mode.HEIGHT and p.is_item_checked(i) and fired[0] == 1,
+		"on in its last mode, checked, the plugin told")
+	m._on_id(GrassPreviewMenu.ID_OVERLAY)
+	assert_eq(GrassEditorPreview.overlay, GrassOverlay.Mode.OFF, "and off")
+	m.free()
+	GrassEditorPreview.overlay = keep[0]
+	GrassEditorPreview.overlay_mode = keep[1]

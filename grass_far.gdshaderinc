@@ -17,6 +17,8 @@
 //     far_grain_fade, the carpet's mean brightness (a view-dependent canopy gap fraction) over
 //     far_carpet_fade.
 // Where the grass map grows AND the terrain rule allows (grass_allow), from the blades' fade outward.
+// THE PAINT OVERLAY (the editor's view strip, GrassOverlay) replaces all of it while grass_overlay > 0: what the grass
+// map holds, drawn on the terrain at every distance (grass_overlay_apply).
 
 uniform bool grass_far_enabled = false;
 uniform highp sampler2DArray grass_maps : repeat_disable;   // GrassMaps (one layer a region layer), GrassMapCodec: R density x 128, G override + 1, B height, A force
@@ -54,6 +56,10 @@ uniform float far_grain_gamma = 0.6;          // the gap fraction's path: P0^(la
 uniform float far_grain_fade = 400.0;         // m past the blades over which the grain gives way
 uniform bool far_all_grounds = false;        // the editor preview: every ground grows (GrassEditorPreview.all_grounds)
 uniform float far_carpet_fade = 1500.0;       // m past the blades over which the carpet's brightness gives way
+// the paint overlay (GrassOverlay; the editor preview only)
+uniform int grass_overlay = 0;                // GrassOverlay.Mode: 0 off, 1 what's painted, 2 density, 3 height
+uniform vec3 grass_overlay_hue[32];           // each slot's tint (GrassOverlay.hues_linear)
+uniform vec3 grass_overlay_key[4];            // removed, forced, less, more (GrassOverlay.key_linear)
 
 // A corner's terrain rule, base and overlay blended: x = its own grass (0 on a "painted only" surface, where
 // GrassTerrainGrowth writes -a), y = what a painted override needs (|a|).
@@ -155,12 +161,68 @@ float far_gust_band(vec2 xz) {
 	return wind_gust(p.x * d + p.y * n);
 }
 
+// Stripes across t (in stripe periods): 1 on a stripe (half the period), 0 between; their mean once they get finer
+// than a pixel.
+float grass_overlay_stripe(float t) {
+	float aa = fwidth(t);
+	float s = 1.0 - smoothstep(0.5 - aa, 0.5 + aa, abs(fract(t) - 0.5) * 2.0);
+	return mix(s, 0.5, clamp(aa * 2.0 - 1.0, 0.0, 1.0));
+}
+
+// The paint overlay (GrassOverlay): the texel of the nearest corner (i0..i3 by the bilinear weights w) over the terrain's
+// albedo. What's painted: a painted species' tint, removed red and hatched, forced with orange stripes, a painted
+// flower color with white dots. Density / height: blue below x1, warm above, stronger further from it; removed hatched
+// dark. The patterns are worked out first: their derivatives need every pixel of the quad.
+vec3 grass_overlay_apply(ivec3 i0, ivec3 i1, ivec3 i2, ivec3 i3, vec4 w, vec3 wpos, vec3 alb) {
+	float hatch = grass_overlay_stripe((wpos.x + wpos.z) * 1.25);       // 0.8 m apart
+	float stripes = grass_overlay_stripe((wpos.x - wpos.z) * 1.25);
+	vec2 dq = fract(wpos.xz * 2.0) - 0.5;                               // a dot every 0.5 m
+	float dots = 1.0 - smoothstep(0.14, 0.14 + fwidth(wpos.x * 2.0) + 1e-4, length(dq));
+	ivec3 i = i0;
+	float best = w.x;
+	if (w.y > best) { best = w.y; i = i1; }
+	if (w.z > best) { best = w.z; i = i2; }
+	if (w.w > best) { i = i3; }
+	if (i.z < 0) {
+		return alb;
+	}
+	ivec4 b = ivec4(floor(texelFetch(grass_maps, i, 0) * 255.0 + 0.5));
+	vec3 col = alb;
+	if (grass_overlay == 1) {
+		if (b.g == 255) {
+			col = mix(alb, mix(grass_overlay_key[0], grass_overlay_key[0] * 0.3, hatch), 0.75);
+		} else if (b.g > 0) {
+			col = mix(alb, grass_overlay_hue[min(b.g - 1, 31)], 0.75);
+		}
+		if (b.a < 128) {
+			col = mix(col, grass_overlay_key[1], 0.85 * stripes);
+		}
+		int ce = b.a & 127;
+		if (ce > 0 && ce < 127) {
+			col = mix(col, vec3(1.0), 0.9 * dots);
+		}
+		return col;
+	}
+	int v = grass_overlay == 2 ? b.r : b.b;
+	if (v != 128) {
+		float d = float(v - 128) / 128.0;
+		col = mix(alb, d < 0.0 ? grass_overlay_key[2] : grass_overlay_key[3], mix(0.3, 0.85, min(abs(d), 1.0)));
+	}
+	if (b.g == 255) {
+		col = mix(col, vec3(0.02), 0.6 * hatch);
+	}
+	return col;
+}
+
 // The terrain's albedo past the blades; `glow` = the BACKLIGHT (grey). i0..i3 / w: the terrain shader's
 // four corner lookups and their bilinear weights (before its height blend reassigns them); nrm_v the view-space
 // terrain normal; view / view_matrix as in fragment().
 vec3 grass_far_apply(ivec3 i0, ivec3 i1, ivec3 i2, ivec3 i3, vec4 w, vec3 wpos, vec3 cam, vec3 view,
 		mat4 view_matrix, vec3 nrm_v, vec3 alb, out vec3 glow) {
 	glow = vec3(0.0);
+	if (grass_overlay > 0) {
+		return grass_overlay_apply(i0, i1, i2, i3, w, wpos, alb);
+	}
 	float dist = length(wpos - cam);
 	float ramp = smoothstep(far_ramp.x, far_ramp.y, dist);
 	if (ramp <= 0.0) {
