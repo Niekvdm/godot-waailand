@@ -299,6 +299,26 @@ func colour_texture() -> Texture2DArray:
 	return _colour_tex
 
 
+## The project's active species changed (the Species dialog): the type rows, the flowers and their streams, the
+## colours and the growth tables are built again from the config's catalog, and in the tree the GPU side with them.
+## The editor calls it; a game loads its set once.
+func reload_species() -> void:
+	var old := decorations
+	if _live:
+		_live = false
+		RenderingServer.call_on_render_thread(_rt_free.bind(old))
+	types = GrassTypes.new()
+	decorations = DecorationStreams.new()
+	_colour_tex = null
+	_season_dirty = true
+	_types_up.mark()
+	if material != null:
+		material.set_shader_parameter("colour_tex", colour_texture())
+		material.set_shader_parameter("type_mean_luma", GrassColour.mean_luma(types))
+	if is_inside_tree():
+		_ready()
+
+
 ## Call after editing `types` rows directly: the type tables are rebuilt and re-sent on the next dispatch.
 func types_changed() -> void:
 	_types_up.mark()
@@ -1390,12 +1410,13 @@ func set_shadow_mode(mode: ShadowMode) -> void:
 	RenderingServer.call_on_render_thread(_apply_shadow_mode)
 
 
-func _rt_free() -> void:
+func _rt_free(p_decorations: DecorationStreams = null) -> void:
 	var rd := _rd
 	if rd == null:
 		return
-	# The decorations' uniform sets reference our params and types buffers: they go first.
-	decorations.rt_free(rd)
+	# The decorations' uniform sets reference our params and types buffers: they go first. `p_decorations`: the streams
+	# being replaced (reload_species), freed on the render thread after the new ones are set.
+	(p_decorations if p_decorations != null else decorations).rt_free(rd)
 	# OUR resources first. Freeing a MultiMesh frees its instance buffer, and the RD then
 	# auto-frees every uniform set built on it, so freeing _place_set afterwards would hit a dead ID.
 	for us in [_place_set, _fin_set]:

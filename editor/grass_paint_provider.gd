@@ -289,6 +289,28 @@ func library_select(p_id: int) -> void:
 	_refresh()
 
 
+## The project's active species changed (the Species dialog): the library, the hover cards and the pictures follow;
+## each layer keeps its selection while its species is still active; the bar is told.
+func reload_species() -> void:
+	var was := {}
+	for l in [Layer.GROUND, Layer.WATER]:
+		var slot: int = paint.species if l == layer else _picked[l]
+		was[l] = String(types.rows[slot].get("name", "")) if slot >= 0 and slot < types.rows.size() else ""
+	types = GrassTypes.new()
+	_kinds = null
+	_growth = null
+	_pictures.clear()
+	for l in was:
+		var now := types.names().find(was[l]) if was[l] != "" else -1
+		if l == layer:
+			var lib := _layer_palette()
+			paint.species = now if now >= 0 else (int(lib[0]["slot"]) if not lib.is_empty() else 0)
+		else:
+			_picked[l] = now
+	library_changed.emit()
+	_refresh()
+
+
 ## Switches the layer the tools paint: the library shows its species (the bar is told), the selection is the one it
 ## had.
 func set_layer(p_layer: Layer) -> void:
