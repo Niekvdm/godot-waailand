@@ -63,6 +63,7 @@ var fill_region := false          # a click paints the whole region under the cu
 var _day_label: Label             # the panel's date row (a chip moves it)
 var _day_slider: HSlider
 var map_date := Callable()        # () -> float: the open map's fixed date (-1: the clock); the plugin sets it
+var _strip: GrassViewStrip = null # the view strip (build_view), while the overlay shows it
 
 
 func _init(p_types: GrassTypes = null) -> void:
@@ -116,16 +117,54 @@ func set_spray(on: bool) -> void:
 func set_preview_day(v: float) -> void:
 	GrassEditorPreview.day = v
 	preview_changed.emit()
+	_strip_refresh()
 
 
 func set_preview_visible(on: bool) -> void:
 	GrassEditorPreview.visible = on
 	preview_changed.emit()
+	_strip_refresh()
 
 
 func set_preview_all_grounds(on: bool) -> void:
 	GrassEditorPreview.all_grounds = on
 	preview_changed.emit()
+	_strip_refresh()
+
+
+## Provider API (Terrain3D Extended 1.2): the view strip at the top of the 3D view.
+func build_view(box: HBoxContainer, kit: Object, accent: Color) -> void:
+	_strip = GrassViewStrip.new()
+	_strip.setup(self, kit, accent)
+	box.add_child(_strip)
+
+
+## The open map's fixed date (its Ground rules), or -1 while the clock runs.
+func fixed_date() -> float:
+	return float(map_date.call()) if map_date.is_valid() else -1.0
+
+
+## The selected species' flowering date (GrassSpeciesPreview.bloom_day); -1 without flowers.
+func bloom_day() -> float:
+	return _bloom_day(paint.species)
+
+
+## The selected species' flowering windows, one per flower kind: (bloom, bloom_end) in days; the whole year for a kind
+## out every day.
+func bloom_windows() -> Array:
+	_load_kinds()
+	var out := []
+	for k in _kinds.kinds:
+		if int(k["host"]) != paint.species:
+			continue
+		var keys: Vector4 = k["bloom"]
+		out.append(Vector2(0.0, GrassSeason.YEAR) if keys.x < 0.0 else Vector2(keys.y, keys.z))
+	return out
+
+
+func _strip_refresh() -> void:
+	if _strip != null and is_instance_valid(_strip):
+		_strip.refresh()
 
 
 ## A day chosen by a chip: the preview, the slider and its label follow.
@@ -288,6 +327,7 @@ func library_selected() -> int:
 func library_select(p_id: int) -> void:
 	paint.species = p_id
 	_refresh()
+	_strip_refresh()
 
 
 ## The project's active species changed (the Species dialog): the library, the hover cards and the pictures follow;
@@ -310,6 +350,7 @@ func reload_species() -> void:
 			_picked[l] = now
 	library_changed.emit()
 	_refresh()
+	_strip_refresh()
 
 
 ## Switches the layer the tools paint: the library shows its species (the bar is told), the selection is the one it
@@ -326,6 +367,7 @@ func set_layer(p_layer: Layer) -> void:
 	paint.species = want
 	library_changed.emit()
 	_refresh()
+	_strip_refresh()
 
 
 ## The palette of the selected layer's species (GrassPaintTool.palette).
@@ -607,6 +649,7 @@ func apply(_tool: String, state: Dictionary) -> void:
 	if state.get("height_range") is Vector2:
 		height_range = state["height_range"]
 	_refresh()
+	_strip_refresh()
 
 
 static func _toggle(kit: Object, p_label: String, p_on: bool, p_fn: Callable) -> Control:

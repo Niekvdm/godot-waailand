@@ -36,13 +36,10 @@ func x_of(day: float, width: float) -> float:
 
 
 func _bar(a: float, b: float, y: float, col: Color) -> void:
-	var xa := x_of(a, size.x)
-	var xb := x_of(b, size.x)
-	if xb >= xa:
+	for s in GrassSeason.spans(a, b):
+		var xa: float = s.x / GrassSeason.YEAR * size.x
+		var xb: float = s.y / GrassSeason.YEAR * size.x
 		draw_rect(Rect2(xa, y, maxf(xb - xa, 1.0), LANE), col)
-	else:
-		draw_rect(Rect2(xa, y, size.x - xa, LANE), col)
-		draw_rect(Rect2(0.0, y, xb, LANE), col)
 
 
 func _draw() -> void:

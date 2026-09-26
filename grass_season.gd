@@ -32,6 +32,19 @@ static func label(doy: float) -> String:
 	return "?"
 
 
+## A window from day `a` to day `b` as spans inside one year ([Vector2(from, to)]), split in two where it runs past
+## the year's end; a window of a year or more is the whole year. The seasons' drawings share it (SeasonYearStrip,
+## GrassYearTrack).
+static func spans(a: float, b: float) -> Array:
+	if b - a >= YEAR:
+		return [Vector2(0.0, YEAR)]
+	var fa := fposmod(a, YEAR)
+	var fb := fposmod(b, YEAR)
+	if fb >= fa:
+		return [Vector2(fa, fb)]
+	return [Vector2(fa, YEAR), Vector2(0.0, fb)]
+
+
 ## Bloom state for keys (bud, bloom, bloom_end, gone) as days of the year, wrapping past the
 ## year's end: x = grow 0..1 (buds rise; full through bloom and seed; shrink over the last
 ## 30 % of the seed stage), y = phase 0..2 (0 bud -> 1 bloom -> 2 seed colour). Outside: 0.

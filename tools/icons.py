@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Digitzone
 # SPDX-License-Identifier: MIT
-"""The Grass workspace's tool icons: 24x24 duotone SVGs (a 1.6 px line and a 24 % fill) drawn in the placeholder
+"""The Grass workspace's tool and view-strip icons: 24x24 duotone SVGs (a 1.6 px line and a 24 % fill) drawn in the placeholder
 colour #FF00FF, which the overlay's src/ux_icons.gd replaces with each tint (Godot's SVG loader has no
 currentColor). Edit a drawing here and run it again from the addon's folder:
     python3 tools/icons.py"""
@@ -21,6 +21,8 @@ GRASS = {
     'grass_force': '<path d="M9 21 C9 15 8.2 11 6 8 C9.4 9.8 11 13.2 11.4 17"/><path d="M13 21 C13 17 13.4 14 14.4 11.4"/><path d="M17.4 2.8 L13.6 10 H17 L14.4 16.4 L20.2 8.2 H16.8 Z"/>',
     'grass_replace': '<path d="M4 8 H17 M14 5 L17 8 L14 11" fill="none"/><path d="M20 16 H7 M10 13 L7 16 L10 19" fill="none"/><circle cx="5" cy="16" r="2"/><circle cx="19" cy="8" r="2"/>',
     'grass_reset': '<path d="M5.2 13 A7 7 0 1 0 8.2 6.6" fill="none"/><path d="M8.6 2.8 L8.2 6.6 L4.4 6.2" fill="none"/><path d="M11 20 C11 16.4 10.6 14 9.4 12.2 C11.4 13.4 12.4 15.2 12.6 17.4"/>',
+    'view_eye': '<path d="M2 12 C5.5 6.5 18.5 6.5 22 12 C18.5 17.5 5.5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3" fill-opacity="1"/>',
+    'view_every_ground': '<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>',
 }
 
 
