@@ -2,7 +2,7 @@
 
 GPU grass, flowers and seasons for [Terrain3D](https://github.com/TokisanGames/Terrain3D), for Godot 4.
 
-![Waailand: tulip beds, a bulb field by a ditch, rice terraces through a year, a lotus pond, kochia in the wind](media/waailand.webp)
+![Waailand: tulips coming up and blooming through a spring, a bulb field by a ditch, tulips painted with the Grass tools, a species dragged into the Species dialog, rice terraces through a year, a lotus pond, kochia in the wind](media/waailand.webp)
 
 | | | |
 |---|---|---|
@@ -185,6 +185,8 @@ inverts a tool. The panel holds the species library with pictures and hover card
 region fill, and the preview's date, and opens the Species and Ground rules dialogs. Each stroke is one undo step; the
 maps are saved with the scene, one image per region beside Terrain3D's region files.
 
+![The Grass workspace: tulips painted across a lawn with the Species tool, the library on the left, the tools and the brush below](media/painting.jpg)
+
 The panel's **Ground / Water** switch picks the layer the tools paint: Water shows the surface species in the
 library, paints the water maps (their own images, in `<maps_folder>_water`) and lands the stroke where the view ray
 meets the water surface (with Terrain3D Extended 1.1; with 1.0 the stroke lands on the bed under the water). Over
@@ -238,7 +240,7 @@ reads as unpainted and says `pending`.
 
 ## Seasons, the sea, roads and downwash
 
-![Rice terraces through a year: flooded with young rice in May, grown in July, ripe in September, drained in December](media/seasons.jpg)
+![Rice terraces through a year: flooded with young rice in May, grown in July, ripening in September, drained and harvested in December](media/seasons.jpg)
 
 - **Seasons.** `set_date(day)` (0 is 1 January) moves every species through its year: accent colours, heights,
   flowers in bud, bloom and seed. The ground rules can pin a species to a stage or a date.
