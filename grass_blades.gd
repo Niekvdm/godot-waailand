@@ -217,6 +217,10 @@ var _region_buf := RID()
 const REGION_MAP_BYTES := 32 * 32 * 4
 ## The live roads (GrassRoads): the kernels keep grass off them and grow verges beside them.
 var roads := GrassRoads.new()
+## The live water sources (GrassWater): the species measure their depth below the highest surface over them, and the
+## surface layer floats on them.
+var water := GrassWater.new()
+var _water_dirty := true
 var _road_origin := Vector2(INF, INF)
 var _road_count := 0
 var _road_dirty := true
@@ -681,6 +685,12 @@ func set_ruts(tex: Texture2D, origin: Vector2, size_m: float, full_depth: float)
 func set_road_footprint(fp) -> void:
 	roads.footprint = fp
 	_road_dirty = true
+
+
+## The water sources (duck-typed: GrassWater says what it must answer); null: none (the sea alone).
+func set_water(source) -> void:
+	water.source = source
+	_water_dirty = true
 
 
 func _notification(what: int) -> void:
