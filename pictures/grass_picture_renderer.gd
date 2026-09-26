@@ -6,7 +6,8 @@ extends RefCounted
 ## One species as the Grass library shows it: GrassSpeciesPreview.recipe drawn
 ## in a small world of its own inside a SubViewport. An 8 x 8 m patch of the species on a flat two-by-two-region
 ## terrain wearing the ground it grows on most (the pack's picture_ground; a plain soil colour without one), on its
-## flowers' date; a sea species under its sea level with no water surface; the pack's picture_environment for sky and
+## flowers' date; a sea species under its sea level with no water surface; a floating species on a pool of water over
+## the patch (a water source and a plane, its patch in the water maps); the pack's picture_environment for sky and
 ## light (a neutral sky and sun without one); the blades at high quality and held still; the camera framed to its
 ## tallest part. Its decorations grow at full density and its blades wear their own colour: the picture shows the
 ## plant, not how much of it a ground grows or the ground's tint on it. Frames are FORCED: the caller turns the render
@@ -19,8 +20,26 @@ const REGION := 128                       # vertices a region side
 const SPACING := 0.5                      # m a vertex
 const PATCH := Rect2(-4.0, -4.0, 8.0, 8.0)
 const SOIL := Color(0.19, 0.2, 0.1)         # a grassland soil (sRGB): short grass reads as turf on it, as on a green texture
+const WATER := Color(0.10, 0.16, 0.14)      # a pond's still water (sRGB), under a floating species
 
 static var _warm := false                 # this process has drawn a picture
+
+
+## A floating species' pool: the patch and a metre around it, `level` m over the flat ground (GrassBlades.set_water).
+class _PatchWater:
+	var level := 0.0
+
+	func _init(p_level: float) -> void:
+		level = p_level
+
+	func is_empty() -> bool:
+		return false
+
+	func snapshot(_origin: Vector2, _window: float, _pad: float) -> Dictionary:
+		var r := PATCH.grow(1.0)
+		return {"polys": [PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end,
+			Vector2(r.position.x, r.end.y)])], "heights": PackedFloat32Array([level]),
+			"kinds": PackedStringArray(["Picture"])}
 
 
 ## The pack's own tables, on the project's slots: [GrassTypes, DecoKinds].
@@ -74,9 +93,18 @@ static func render(vp: SubViewport, p_pack: GrassSpeciesPack, p_types: GrassType
 	blades.cull_frustum = false
 	blades.set_date(float(r["day"]))
 	world.add_child(blades)
-	var maps := _maps(p_slot, p_bare)
+	var wd := float(r.get("water_depth", NAN))
+	var floats := not is_nan(wd)
+	var maps := _maps(p_slot, p_bare or floats)        # a floating species: the ground grows nothing
 	for loc in maps:
 		blades.grass_maps.adopt(loc, maps[loc])
+	if floats:
+		var wmaps := _maps(p_slot, p_bare)
+		for loc in wmaps:
+			blades.water_maps.adopt(loc, wmaps[loc])
+		blades.set_water(_PatchWater.new(wd))
+		blades.water_bob_m = 0.0
+		world.add_child(_water_plane(wd))
 	blades.set_uniform(&"colour_tex", blades.colour_texture())
 	blades.set_shadow_mode(GrassBlades.ShadowMode.HIGH_CASTS)
 	if not is_nan(float(r["sea_depth"])):
@@ -94,7 +122,7 @@ static func render(vp: SubViewport, p_pack: GrassSpeciesPack, p_types: GrassType
 	var sun := _environment(world, p_pack)
 	blades.set_sun(-sun.global_basis.z)
 	var h := maxf(float(r["frame_h"]), 0.25)
-	var target := Vector3(0.0, 0.4 * h, 0.0)
+	var target := Vector3(0.0, 0.4 * h + (wd if floats else 0.0), 0.0)
 	cam.global_position = target + Vector3(-0.35, 0.5, -1.0).normalized() * (1.5 * h + 1.3)
 	cam.look_at(target, Vector3.UP)
 	RenderingServer.camera_set_transform(cam.get_camera_rid(), cam.global_transform)   # forced draws skip the frame
@@ -194,6 +222,20 @@ static func _ground_assets(p_pack: GrassSpeciesPack, p_ground: String) -> Resour
 		ta = _plain(want if want != "" else "Soil", SOIL)
 	a.call("set_texture_asset", 0, ta)
 	return a
+
+
+## The pool's surface under a floating species: still water just below the floating roots.
+static func _water_plane(level: float) -> MeshInstance3D:
+	var pm := PlaneMesh.new()
+	pm.size = PATCH.grow(1.0).size
+	var m := StandardMaterial3D.new()
+	m.albedo_color = WATER
+	m.roughness = 0.15
+	pm.material = m
+	var mi := MeshInstance3D.new()
+	mi.mesh = pm
+	mi.position = Vector3(PATCH.get_center().x, level - 0.002, PATCH.get_center().y)
+	return mi
 
 
 ## A 64 px texture asset of one colour (alpha: height), with a flat normal (alpha: roughness).

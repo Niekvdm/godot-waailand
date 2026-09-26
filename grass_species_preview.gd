@@ -35,7 +35,8 @@ static func pictures_dir(p_id: String) -> String:
 
 ## How the species is shown: `ground` (a growth-table slot name, as the table writes it, where it grows most:
 ## the slot's allowance x the species' share of its mix; "" when none grows it), `sea_depth` (m below the sea
-## its patch stands at: its depth range's middle; NAN on land), `day` (the species' picture_day, else its first
+## its patch stands at: its depth range's middle; NAN on land and for a floating species), `water_depth` (a floating
+## species only: m of water under its patch), `day` (the species' picture_day, else its first
 ## decoration kind's mid-bloom, else GrassEditorPreview's default date) and `frame_h` (m: its tallest part, blade or
 ## flower, for the camera).
 static func recipe(types: GrassTypes, kinds: DecoKinds, growth: GrassTerrainGrowth, slot: int) -> Dictionary:
@@ -61,8 +62,15 @@ static func recipe(types: GrassTypes, kinds: DecoKinds, growth: GrassTerrainGrow
 		if k["height_rel"]:
 			mesh_h *= float(row.get("height", 0.0))
 		frame_h = maxf(frame_h, mesh_h)
-	return {"ground": growth.display_names.get(best, best) if best != "" else "",
-		"sea_depth": 0.5 * (depth.x + depth.y) if depth.x >= 0.0 else NAN, "day": day, "frame_h": frame_h}
+	var surface := int(row.get("layer", GrassTypes.LAYER_GROUND)) == GrassTypes.LAYER_SURFACE
+	var out := {"ground": growth.display_names.get(best, best) if best != "" else "",
+		"sea_depth": 0.5 * (depth.x + depth.y) if depth.x >= 0.0 and not surface else NAN, "day": day,
+		"frame_h": frame_h}
+	if surface:
+		# A floating species floats on water 0.3 m deeper than its shallowest (only a floating species' recipe has it:
+		# the recipe is part of every picture's stamp).
+		out["water_depth"] = clampf(depth.x + 0.3, depth.x, depth.y)
+	return out
 
 
 ## What a picture was made from: the render version, the species' row and the kinds it hosts (their slot left out, so
