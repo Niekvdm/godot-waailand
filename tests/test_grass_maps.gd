@@ -204,3 +204,16 @@ func test_the_unsaved_registry() -> void:
 		GrassMaps.unsaved_for("").has(a)], [1, 0, true], "by scene; \"\" is every scene (quitting)")
 	a.save_dirty()
 	assert_true(not GrassMaps.unsaved_maps().has(a), "saved: off the list")
+
+
+func test_the_water_maps() -> void:
+	assert_eq(GrassBlades.water_folder("grass"), "grass_water", "the surface layer's folder, beside the ground maps")
+	var b := GrassBlades.new()
+	assert_true(b.water_maps != null and b.water_maps != b.grass_maps, "their own maps")
+	b.free()
+	var w := GrassMaps.new()
+	w.folder = GrassBlades.water_folder("grass")
+	w.bind(_terrain())
+	assert_eq(w.path_for(Vector2i(0, 0)), dir.path_join("grass_water").path_join(
+		Terrain3DUtil.location_to_filename(Vector2i(0, 0))), "a region's water map sits in grass_water")
+	assert_eq(w.pixel(Vector3(1.0, 0.0, 1.0)), GrassMaps.NEUTRAL, "no file: neutral (the water kind's mix floats)")

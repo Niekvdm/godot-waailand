@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // grass_place_common.glsli: shared by blade_place.glsl and deco_place.glsl.
 // The bindings both kernels share (0 params, 1 types, 2 Terrain3D heights, 3 the grass maps,
-// 8 interaction field, 9 region map, 10-11 roads, 12 ruts, 13 control maps, 15-16 water sources), the params
+// 8 interaction field, 9 region map, 10-11 roads, 12 ruts, 13 control maps, 14 water maps, 15-16 water sources), the params
 // layout (mirrored by GrassBlades._params_bytes()), and the placement
 // primitives, so blades and decorations cannot disagree about where a clump is or which
 // type grows where. Kernel-specific bindings (4-7) and push constants stay in each kernel.
@@ -18,6 +18,7 @@ layout(set = 0, binding = 10, std430) restrict readonly buffer RoadIds { uint v[
 layout(set = 0, binding = 11, std430) restrict readonly buffer RoadShapes { vec4 v[]; } RSH;     // GrassRoads: shapes, vertices
 layout(set = 0, binding = 12) uniform sampler2D rut_map;              // set_ruts: R depression (m)
 layout(set = 0, binding = 13) uniform sampler2DArray control_maps;   // Terrain3D control words (R32F bits): what the terrain is painted with
+layout(set = 0, binding = 14) uniform sampler2DArray water_maps;    // the surface layer's grass maps (GrassMaps, <folder>_water): RGBA8
 layout(set = 0, binding = 15, std430) restrict readonly buffer WaterIds { uint v[]; } WI;       // GrassWater: bin offsets, ids
 layout(set = 0, binding = 16, std430) restrict readonly buffer WaterShapes { vec4 v[]; } WSH;   // GrassWater: polygons, vertices
 

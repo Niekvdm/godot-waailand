@@ -177,13 +177,18 @@ var applied_casts := {}
 
 ## The Terrain3D node whose arrays the blades read. Found up the parent chain if not set.
 var terrain: Node = null
-var _ground_rids := [RID(), RID(), RID(), RID()]   # the RS height / grass / control arrays and rut map last bound
+var _ground_rids := [RID(), RID(), RID(), RID(), RID()]   # the RS height / grass / rut / control / water maps last bound
 ## What grows on which terrain texture (the growth table, GrassBladesConfig.growth_path): resolved against the
 ## terrain's own assets into 32 allowances and 32 species mixes by texture id, uploaded after the type rows.
 ## Call refresh_growth() after replacing it.
 var growth := GrassTerrainGrowth.new()
 ## The grass maps (GrassMaps): the painted density, species, height and force per region.
 var grass_maps := GrassMaps.new()
+## The surface layer's grass maps (GrassMaps, the same codec: density, species override, height, force), in
+## <maps_folder>_water beside the ground's.
+var water_maps := GrassMaps.new()
+## The water maps' folder is the ground maps' with this after it.
+const WATER_FOLDER_SUFFIX := "_water"
 var _warned_side_maps := false
 ## The map's ground rules file; "" = <GrassBladesConfig.grounds_dir>/<the scene this node is saved in>.json (the
 ## game instances that scene and the editor edits it, so both find the same file). No file: the shared growth table.
@@ -277,6 +282,7 @@ func gust_texture() -> ImageTexture:
 func _init() -> void:
 	add_to_group(GROUP)
 	_query.texel = grass_maps.query_texel
+	_query.water_texel = water_maps.query_texel
 	_query.pending = grass_maps.query_pending
 	_query.control = _ground_control
 	_query.height = _ground_height
@@ -360,6 +366,11 @@ func _ready() -> void:
 		grass_maps.changed.connect(_on_grass_maps_changed)
 	grass_maps.scene_path = owner.scene_file_path if owner != null else ""
 	grass_maps.bind(terrain)
+	water_maps.folder = water_folder(grass_maps.folder)
+	water_maps.editor = _editor
+	water_maps.keep_images = _editor
+	water_maps.scene_path = grass_maps.scene_path
+	water_maps.bind(terrain)
 	if terrain.get("side_maps_enabled") == true and not _warned_side_maps:
 		_warned_side_maps = true
 		push_warning("GrassBlades: the terrain still loads its side maps (side_maps_enabled), but the grass reads its "
@@ -633,6 +644,7 @@ func refresh_growth() -> void:
 
 func _on_region_map_changed() -> void:
 	grass_maps.refresh()
+	water_maps.refresh()
 	_region_map_dirty = true
 	_ground_dirty = true
 
@@ -704,6 +716,11 @@ func set_ruts(tex: Texture2D, origin: Vector2, size_m: float, full_depth: float)
 func set_road_footprint(fp) -> void:
 	roads.footprint = fp
 	_road_dirty = true
+
+
+## The water maps' folder for a ground maps folder (GrassBladesConfig.maps_folder).
+static func water_folder(maps_folder: String) -> String:
+	return maps_folder + WATER_FOLDER_SUFFIX
 
 
 ## The water sources (duck-typed: GrassWater says what it must answer); null: none (the sea alone).
@@ -873,8 +890,9 @@ func _dispatch(dt: float) -> void:
 	var us3 := Time.get_ticks_usec() if debug_timing else 0
 	var data: Object = terrain.get("data")
 	grass_maps.poll()          # streamed maps that finished loading reach their layers
+	water_maps.poll()
 	var ground := {"h": data.get_height_maps_rid(), "g": grass_maps.rid(), "rut": _rut_tex,
-		"c": data.get_control_maps_rid()}
+		"c": data.get_control_maps_rid(), "w": water_maps.rid()}
 	if _region_map_dirty:
 		ground["map"] = (data.get_region_map() as PackedInt32Array).to_byte_array()
 		_region_map_dirty = false
@@ -1189,41 +1207,45 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 		set_grass_visible(false)    # new instances start visible: a hidden field stays hidden on re-entry
 
 
-## Bindings 2 (heights), 3 (grass maps), 9 (region map): shared by the blade and decoration sets.
-func _ground_uniforms(h_rd: RID, g_rd: RID, rut_rd: RID, c_rd: RID) -> Array[RDUniform]:
+## Bindings 2 (heights), 3 (grass maps), 9 (region map), 10-11 (roads), 12 (ruts), 13 (control maps), 14 (the water
+## maps), 15-16 (water sources): shared by the blade and decoration sets.
+func _ground_uniforms(h_rd: RID, g_rd: RID, rut_rd: RID, c_rd: RID, w_rd: RID) -> Array[RDUniform]:
 	var out: Array[RDUniform] = [_sampled(2, h_rd), _sampled(3, g_rd), _storage(9, _region_buf),
 		_storage(10, _road_idx), _storage(11, _road_shapes), _sampled(12, rut_rd), _sampled(13, c_rd),
-		_storage(15, _water_idx), _storage(16, _water_shapes)]
+		_sampled(14, w_rd), _storage(15, _water_idx), _storage(16, _water_shapes)]
 	return out
 
 
 ## (Re)build every uniform set that reads the terrain. Terrain3D replaces an array's RID when it
 ## rebuilds it (with every region resident); a streaming build's slot pool keeps its arrays.
-func _rt_bind_ground(rd: RenderingDevice, h_rs: RID, g_rs: RID, rut_rs: RID, c_rs: RID) -> bool:
-	if not h_rs.is_valid() or not g_rs.is_valid() or not rut_rs.is_valid() or not c_rs.is_valid():
+func _rt_bind_ground(rd: RenderingDevice, h_rs: RID, g_rs: RID, rut_rs: RID, c_rs: RID, w_rs: RID) -> bool:
+	if not h_rs.is_valid() or not g_rs.is_valid() or not rut_rs.is_valid() or not c_rs.is_valid() \
+			or not w_rs.is_valid():
 		return false
 	var h_rd := RenderingServer.texture_get_rd_texture(h_rs)
 	var g_rd := RenderingServer.texture_get_rd_texture(g_rs)
+	var w_rd := RenderingServer.texture_get_rd_texture(w_rs)
 	var c_rd := RenderingServer.texture_get_rd_texture(c_rs)
 	var rut_rd := RenderingServer.texture_get_rd_texture(rut_rs)
 	if not rut_rd.is_valid():
 		# An unusable rut map must not stop the grass: bind the dummy (ruts read as none).
 		rut_rd = RenderingServer.texture_get_rd_texture(_dummy_rut.get_rid())
-	if not h_rd.is_valid() or not g_rd.is_valid() or not rut_rd.is_valid() or not c_rd.is_valid():
+	if not h_rd.is_valid() or not g_rd.is_valid() or not rut_rd.is_valid() or not c_rd.is_valid() \
+			or not w_rd.is_valid():
 		return false
 	if _place_set.is_valid() and rd.uniform_set_is_valid(_place_set):
 		rd.free_rid(_place_set)
 	var pu: Array[RDUniform] = [_storage(0, _params), _storage(1, _types_buf),
 		_storage(4, _counters), _storage(5, _dst[0]), _storage(6, _dst[1]), _storage(7, _dst[2])]
-	pu.append_array(_ground_uniforms(h_rd, g_rd, rut_rd, c_rd))
+	pu.append_array(_ground_uniforms(h_rd, g_rd, rut_rd, c_rd, w_rd))
 	var fu := RDUniform.new()
 	fu.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 	fu.binding = 8
 	fu.add_id(_field_tex)
 	pu.append(fu)
 	_place_set = rd.uniform_set_create(pu, _place_shader, 0)
-	decorations.rt_bind(rd, _ground_uniforms(h_rd, g_rd, rut_rd, c_rd))
-	_ground_rids = [h_rs, g_rs, rut_rs, c_rs]
+	decorations.rt_bind(rd, _ground_uniforms(h_rd, g_rd, rut_rd, c_rd, w_rd))
+	_ground_rids = [h_rs, g_rs, rut_rs, c_rs, w_rs]
 	return _place_set.is_valid()
 
 
@@ -1250,8 +1272,8 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 		if not wsb.is_empty():
 			rd.buffer_update(_water_shapes, 0, wsb.size(), wsb)
 	if ground["h"] != _ground_rids[0] or ground["g"] != _ground_rids[1] or ground["rut"] != _ground_rids[2] \
-			or ground["c"] != _ground_rids[3] or not _place_set.is_valid():
-		if not _rt_bind_ground(rd, ground["h"], ground["g"], ground["rut"], ground["c"]):
+			or ground["c"] != _ground_rids[3] or ground["w"] != _ground_rids[4] or not _place_set.is_valid():
+		if not _rt_bind_ground(rd, ground["h"], ground["g"], ground["rut"], ground["c"], ground["w"]):
 			return
 	rd.buffer_update(_params, 0, params.size(), params)
 	if not types_b.is_empty():
@@ -1377,7 +1399,7 @@ func _rt_free() -> void:
 	# stays true), so reset them, or the rebind check never fires.
 	_place_set = RID()
 	_fin_set = RID()
-	_ground_rids = [RID(), RID(), RID(), RID()]
+	_ground_rids = [RID(), RID(), RID(), RID(), RID()]
 	_region_map_dirty = true
 	_road_dirty = true
 

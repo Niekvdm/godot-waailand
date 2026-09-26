@@ -35,6 +35,8 @@ var texel: Callable = func(_v: Vector2i) -> Color: return GrassMaps.NEUTRAL
 var control: Callable = func(_v: Vector2i) -> int: return 0
 var height: Callable = func(_v: Vector2i) -> float: return NAN
 var pending: Callable = func(_v: Vector2i) -> bool: return false
+## The surface layer's texel at vertex v (the water maps; sample_water).
+var water_texel: Callable = func(_v: Vector2i) -> Color: return GrassMaps.NEUTRAL
 
 
 func sample(pos: Vector3) -> GrassSample:
