@@ -2,7 +2,7 @@
 
 GPU grass, flowers and seasons for [Terrain3D](https://github.com/TokisanGames/Terrain3D), for Godot 4.
 
-![Waailand in 76 seconds: grass growing in and a tulip field, the species packs, tulips, kochia and rice terraces through their seasons, painting with the Grass tools, previewing a date, the Ground rules and Species dialogs, floating and wet species, gusts, a ball rolling through tall grass and rotor downwash](media/waailand.webp)
+![Waailand in 74 seconds: a tulip field, the species packs, tulips, kochia and rice terraces through their seasons, painting with the Grass tools, previewing a date, the Ground rules and Species dialogs, floating and wet species, a gust across a hay field and a ball rolling through it](media/waailand.webp)
 
 | | | |
 |---|---|---|
