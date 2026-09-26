@@ -7,6 +7,10 @@ extends Resource
 ## decorations it hosts. to_row_json() gives the row GrassTypes parses. The defaults are a plain pasture grass, so a
 ## new species grows something sensible at once.
 
+## Where a species grows: GROUND (the terrain's layer, under and through water too) or SURFACE (floating on water
+## sources: water lilies, lotus pads, duckweed).
+enum Layer { GROUND, SURFACE }
+
 ## The name the ground rules, the growth table and the painting use. Unique across the project's packs.
 @export var id: StringName = &""
 ## The name people see (the library, the hover card).
@@ -16,6 +20,8 @@ extends Resource
 ## The day of the year its library picture is drawn on (0..364); -1: its first decoration's mid-bloom, else the
 ## preview's default date. For a species whose look is a season of its own (autumn colour, winter leaves).
 @export_range(-1.0, 364.0) var picture_day := -1.0
+## GROUND, or SURFACE: it floats on water sources (GrassBlades.set_water, the sea), in the surface layer.
+@export var layer := Layer.GROUND
 
 @export_group("Blade")
 ## Blade height (m).
@@ -76,10 +82,14 @@ extends Resource
 @export_group("Season and sea")
 ## Height through the year: (day 0..364, factor) knots, days ascending. Empty: the same all year.
 @export var height_season := PackedVector2Array()
-## Metres below the sea it grows at (min, max); (0, 0): a land species.
+## Metres below the water surface it grows at (min, max): under the sea or any water source; (0, 0): a land species.
+## A SURFACE species: the water's depth under it (min, max); (0, 0): any water 5 cm deep or more.
 @export var depth_m := Vector2.ZERO
 ## Over how many metres it fades in and out at both ends of its depth range.
 @export var depth_feather_m := 1.0
+## A GROUND species without depth_m: the deepest water (m) it still grows in (rice 0.3, reed 0.5); 0: it stops at
+## the waterline.
+@export var wet_depth_m := 0.0
 
 @export_group("Beds")
 ## Grows in beds: bed_m of growth (m), path_m bare, stripes at stripe_angle_deg (0: no beds).
@@ -122,6 +132,10 @@ func to_row_json(p_slot: int) -> Dictionary:
 		r["host_only"] = true
 	if invented:
 		r["invented"] = true
+	if layer == Layer.SURFACE:
+		r["layer"] = "surface"
+	if wet_depth_m > 0.0:
+		r["wet_depth_m"] = wet_depth_m
 	if picture_day >= 0.0:
 		r["picture_day"] = picture_day
 	return r

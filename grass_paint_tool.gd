@@ -154,8 +154,9 @@ static func palette(types: GrassTypes) -> Array:
 	for r in types.rows:
 		if r.is_empty():
 			continue
+		var layer := int(r.get("layer", GrassTypes.LAYER_GROUND))
 		out.append({"slot": int(r["slot"]), "name": String(r["name"]), "colour": r.get("tip_a", Color.WHITE),
-			"sea": (r["depth"] as Vector3).x >= 0.0})
+			"sea": (r["depth"] as Vector3).x >= 0.0 and layer == GrassTypes.LAYER_GROUND, "layer": layer})
 	return out
 
 

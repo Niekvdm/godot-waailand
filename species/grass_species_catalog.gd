@@ -121,6 +121,9 @@ func _pick_mix(p_packs: Array, p_override: Dictionary) -> Dictionary:
 		if not _in_use(StringName(id)):
 			errors.append("the default mix names '%s', which is in no pack in use" % id)
 			continue
+		if species.any(func(s): return s.id == StringName(id) and s.layer == GrassSpecies.Layer.SURFACE):
+			errors.append("the default mix names '%s', a surface species (it floats on water, in a water mix)" % id)
+			continue
 		mix[String(id)] = float(want[id])
 		total += float(want[id])
 	if mix.is_empty() or total <= 0.0:

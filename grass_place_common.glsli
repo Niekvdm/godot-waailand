@@ -154,22 +154,26 @@ bool in_frustum(vec3 c, float r) {
 #define SPECIES_PATCH_M P.v[19].y          // the species patches' size (GrassBlades.species_patch_m)
 #define SEA_LEVEL       P.v[19].z          // GrassBlades.sea_level (set_sea)
 #define SEA_ON          (P.v[19].w > 0.5)  // no sea: every depth is dry land
-#define DEPTH_BASE      392                // T.v[392 + type]: (min, max, feather, 0), GrassTypes.depth_table
+#define DEPTH_BASE      392                // T.v[392 + type]: (min, max, feather, layer), GrassTypes.depth_table
+#define SEA_SHORE_M     0.3                // GrassTypes.SEA_SHORE_M: the sea's bare shore
+#define TYPE_LAYER(ty)  int(T.v[DEPTH_BASE + (ty)].w + 0.5)   // GrassTypes.LAYER_*: 0 ground, 1 surface
 #define BAND_SOFT_M     20.0               // an elevation band's edge wanders this much (m, total)
 
-// A type's eligibility d m below the sea (GrassTypes.eligibility, mirrored): 0 outside its depth range,
-// 1 inside, fading over the last feather at each end.
-float type_eligibility(int ty, float d) {
+// A type's eligibility d m below the water (GrassTypes.eligibility, mirrored): 0 outside its depth range, 1 inside,
+// fading over the last feather at each end. `shore`: the water's bare shore (the sea's SEA_SHORE_M, 0 inland); a land
+// range (open at the bottom, ending above the water) keeps its margin to the sea and loses what the water's lacks.
+float type_eligibility(int ty, float d, float shore) {
 	vec4 r = T.v[DEPTH_BASE + ty];
-	if (d < r.x || d > r.y) {
+	float x = (r.x <= -9999.0 && r.y <= 0.0) ? d + shore - SEA_SHORE_M : d;
+	if (x < r.x || x > r.y) {
 		return 0.0;
 	}
-	return smoothstep(r.x, r.x + r.z, d) * (1.0 - smoothstep(r.y - r.z, r.y, d));
+	return smoothstep(r.x, r.x + r.z, x) * (1.0 - smoothstep(r.y - r.z, r.y, x));
 }
 
 // The slot's mix at elevation h and depth d, sampled at u01 against weight x eligibility, renormalised
 // over the mix; best = the mix's best eligibility (the density multiplier). -1: nothing may grow.
-int mix_pick(int slot, float h, float d, float u01, out float best) {
+int mix_pick(int slot, float h, float d, float shore, float u01, out float best) {
 	vec4 hdr = T.v[MIX_BASE + slot * MIX_VEC4 + 6];
 	int o = MIX_BASE + slot * MIX_VEC4 + ((hdr.y > 0.5 && h > hdr.x) ? 3 : 0);
 	float tot = 0.0;
@@ -181,7 +185,7 @@ int mix_pick(int slot, float h, float d, float u01, out float best) {
 		if (pr.x < 0.0) {
 			break;
 		}
-		float e = type_eligibility(int(pr.x), d);
+		float e = type_eligibility(int(pr.x), d, shore);
 		tot += (pr.y - prev) * e;
 		best = max(best, e);
 		prev = pr.y;
@@ -199,7 +203,7 @@ int mix_pick(int slot, float h, float d, float u01, out float best) {
 		if (pr.x < 0.0) {
 			break;
 		}
-		float e = type_eligibility(int(pr.x), d);
+		float e = type_eligibility(int(pr.x), d, shore);
 		acc += (pr.y - prev) * e;
 		prev = pr.y;
 		if (e > 0.0) {
@@ -302,6 +306,7 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 	// sea: the species know their depth.
 	float gh = mix(mix(hs[0], hs[1], f.x), mix(hs[2], hs[3], f.x), f.y);
 	float depth = SEA_ON ? SEA_LEVEL - gh : -100.0;     // no sea: dry land (not the land range's own -1e4 edge)
+	float shore = SEA_SHORE_M;
 	vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
 	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
 	vec4 wa = w * vec4(a[0], a[1], a[2], a[3]);
@@ -323,7 +328,7 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 	int ov = int(c[k].g * 255.0 + 0.5) - 1;
 	if (ov >= 0) {
 		ty = min(ov, 31);
-		pl.r *= type_eligibility(ty, depth);     // a painted land type under water grows nothing
+		pl.r *= type_eligibility(ty, depth, shore);     // a painted land type under water grows nothing
 		return true;
 	}
 	// The ground decides. A hash of the position (not the caller's streams): a blade and a decoration
@@ -342,10 +347,10 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 	float h = gh + (rnd3(ivec2(floor(pos * 64.0)), 14u).x - 0.5) * BAND_SOFT_M;
 	vec2 jit = (hp.xy - 0.5) * SPECIES_PATCH_M * 0.35;       // ragged patch edges
 	float best;
-	ty = mix_pick(slot, h, depth, species_patch(pos + jit, slot), best);
+	ty = mix_pick(slot, h, depth, shore, species_patch(pos + jit, slot), best);
 	if (ty < 0 && fk) {
 		ty = FALLBACK_TYPE;   // forced where the ground's mix can't grow at this depth: the fallback, where IT may
-		best = type_eligibility(FALLBACK_TYPE, depth);
+		best = type_eligibility(FALLBACK_TYPE, depth, shore);
 	}
 	pl.r *= best;
 	if (ty < 0) {

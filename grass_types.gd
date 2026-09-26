@@ -20,10 +20,20 @@ extends RefCounted
 
 const SLOTS := 32
 const VEC4 := 4
-## Depth below the sea (min, max, feather) of a type without `depth_m`: land: at least 0.3 m above
-## the sea, thinning over the 0.3 m before it. The lower end sits
-## 10 km down so its feather is 1 at every real depth.
+## The layers (GrassSpecies.Layer): the ground's grid, or the one floating on water sources.
+const LAYER_GROUND := 0
+const LAYER_SURFACE := 1
+## Depth below the water (min, max, feather) of a ground type without `depth_m`: land, at least 0.3 m above the sea
+## (its shore, SEA_SHORE_M), thinning over the 0.3 m before it. Inland water has no shore: there land reaches the
+## waterline (eligibility shifts a land range by the shore the water lacks). The lower end sits 10 km down so its
+## feather is 1 at every real depth.
 const LAND_DEPTH := Vector3(-10000.0, -0.3, 0.3)
+## The bare shore above the sea (m): swell and wet sand. LAND_DEPTH's upper end.
+const SEA_SHORE_M := 0.3
+## A SURFACE type without depth_m: any water at least 5 cm deep.
+const SURFACE_DEPTH := Vector3(0.05, 10000.0, 0.05)
+## An emergent type (wet_depth_m w): from dry land to w m of water, thinning over the last min(w, WET_FEATHER_M).
+const WET_FEATHER_M := 0.3
 ## GrassTypes.new() reads the catalog the project's GrassBladesConfig names; "" is an empty catalog.
 const FROM_CONFIG := "<config>"
 const NUMERIC := ["height", "height_jitter", "width", "clump_cell", "pull", "facing_mix", "density",
@@ -144,12 +154,29 @@ func _parse_row(t) -> Dictionary:
 		r["accent_width"] = float(t.get("accent_width", 30.0))
 	# How far the blade colour moves toward the terrain texture under it (0 = own colour).
 	r["ground_colour"] = clampf(float(t.get("ground_colour", 0.0)), 0.0, 1.0)
-	r["depth"] = LAND_DEPTH
+	var layer_s := str(t.get("layer", "ground"))
+	if layer_s != "ground" and layer_s != "surface":
+		errors.append("%s: layer is \"ground\" or \"surface\", not \"%s\"" % [nm, layer_s])
+		return {}
+	# A ground row carries no layer key (a row is part of the pictures' stamps and the far grain's hash).
+	if layer_s == "surface":
+		r["layer"] = LAYER_SURFACE
+	r["depth"] = SURFACE_DEPTH if layer_s == "surface" else LAND_DEPTH
+	var wet = t.get("wet_depth_m", 0.0)
+	if not (wet is float or wet is int) or float(wet) < 0.0:
+		errors.append("%s: wet_depth_m wants metres >= 0" % nm)
+		return {}
+	if float(wet) > 0.0:
+		if layer_s == "surface" or t.has("depth_m"):
+			errors.append("%s: wet_depth_m is for a ground species without depth_m" % nm)
+			return {}
+		r["wet_depth_m"] = float(wet)
+		r["depth"] = Vector3(-10000.0, float(wet), minf(WET_FEATHER_M, float(wet)))
 	if t.has("depth_m"):
 		var dm = t.get("depth_m")
 		if typeof(dm) != TYPE_ARRAY or dm.size() != 2 or not (dm[0] is float or dm[0] is int) \
 				or not (dm[1] is float or dm[1] is int) or float(dm[0]) >= float(dm[1]):
-			errors.append("%s: depth_m wants [min, max] metres below the sea, min < max" % nm)
+			errors.append("%s: depth_m wants [min, max] metres below the water, min < max" % nm)
 			return {}
 		r["depth"] = Vector3(float(dm[0]), float(dm[1]), float(t.get("depth_feather_m", 1.0)))
 	if t.has("height_season"):
@@ -185,21 +212,24 @@ static func _parse_season(v) -> Array:
 	return out
 
 
-## How well a type grows `depth` m below the sea (negative: above it): 0 outside its range, 1 inside,
-## fading over the last feather at each end. grass_place_common.glsli type_eligibility mirrors it.
-static func eligibility(r: Dictionary, depth: float) -> float:
+## How well a type grows `depth` m below the water (negative: above it): 0 outside its range, 1 inside, fading over the
+## last feather at each end. `shore`: the water's bare shore (the sea's SEA_SHORE_M by default, 0 inland); a land
+## range (open at the bottom, ending above the water) keeps its margin to the sea and loses what the water's shore
+## lacks. grass_place_common.glsli type_eligibility mirrors it.
+static func eligibility(r: Dictionary, depth: float, shore := SEA_SHORE_M) -> float:
 	var d: Vector3 = r.get("depth", LAND_DEPTH)
-	if depth < d.x or depth > d.y:
+	var x := depth + shore - SEA_SHORE_M if d.x <= -9999.0 and d.y <= 0.0 else depth
+	if x < d.x or x > d.y:
 		return 0.0
-	return smoothstep(d.x, d.x + d.z, depth) * (1.0 - smoothstep(d.y - d.z, d.y, depth))
+	return smoothstep(d.x, d.x + d.z, x) * (1.0 - smoothstep(d.y - d.z, d.y, x))
 
 
-## The compute's depth rows (T.v[392 + slot]): (min, max, feather, 0); an empty slot is land.
+## The compute's depth rows (T.v[392 + slot]): (min, max, feather, layer); an empty slot is land.
 func depth_table() -> Array:
 	var out := []
 	for i in SLOTS:
 		var d: Vector3 = rows[i].get("depth", LAND_DEPTH)
-		out.append(Vector4(d.x, d.y, d.z, 0.0))
+		out.append(Vector4(d.x, d.y, d.z, float(int(rows[i].get("layer", LAYER_GROUND)))))
 	return out
 
 

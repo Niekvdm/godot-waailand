@@ -55,6 +55,7 @@ func sample(pos: Vector3) -> GrassSample:
 	var w: Array[float] = [(1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y]
 	var gh := lerpf(lerpf(hs[0], hs[1], f.x), lerpf(hs[2], hs[3], f.x), f.y)
 	var depth := sea_level - gh if not is_nan(sea_level) else -100.0
+	var shore := GrassTypes.SEA_SHORE_M
 	var r := 0.0
 	var b := 0.0
 	var total := 0.0
@@ -74,7 +75,7 @@ func sample(pos: Vector3) -> GrassSample:
 	var ty := c[k].g8 - 1
 	if ty >= 0:
 		ty = mini(ty, 31)
-		dens *= _eligible(ty, depth)
+		dens *= _eligible(ty, depth, shore)
 	else:
 		var cell := Vector2i(floori(p.x * 64.0), floori(p.y * 64.0))
 		var hp := GrassHash.rnd3(cell, 13)
@@ -90,12 +91,12 @@ func sample(pos: Vector3) -> GrassSample:
 		var slot := so if hp.z * (gb + go) < go else sb
 		var h := gh + (GrassHash.rnd3(cell, 14).x - 0.5) * BAND_SOFT_M
 		var jit := (Vector2(hp.x, hp.y) - Vector2(0.5, 0.5)) * species_patch_m * 0.35
-		var pick := _mix_pick(slot, h, depth, _species_patch(p + jit, slot))
+		var pick := _mix_pick(slot, h, depth, _species_patch(p + jit, slot), shore)
 		ty = int(pick.x)
 		var best := pick.y
 		if ty < 0 and fk:
 			ty = types.fallback_slot
-			best = _eligible(ty, depth)
+			best = _eligible(ty, depth, shore)
 		if ty < 0:
 			return s
 		dens *= best
@@ -145,12 +146,12 @@ func _allow(i: int) -> float:
 
 
 ## A type's eligibility d m below the sea (the kernel reads GrassTypes.depth_table: an empty slot is land).
-func _eligible(ty: int, d: float) -> float:
-	return GrassTypes.eligibility(types.rows[ty] if ty < types.rows.size() else {}, d)
+func _eligible(ty: int, d: float, shore := GrassTypes.SEA_SHORE_M) -> float:
+	return GrassTypes.eligibility(types.rows[ty] if ty < types.rows.size() else {}, d, shore)
 
 
 ## The slot's mix at elevation h and depth d (mix_pick): Vector2(type, best eligibility); type -1: nothing may grow.
-func _mix_pick(slot: int, h: float, d: float, u01: float) -> Vector2:
+func _mix_pick(slot: int, h: float, d: float, u01: float, shore := GrassTypes.SEA_SHORE_M) -> Vector2:
 	var base := slot * MIX_FLOATS
 	if base + MIX_FLOATS > mix.size():
 		return Vector2(-1.0, 0.0)
@@ -162,7 +163,7 @@ func _mix_pick(slot: int, h: float, d: float, u01: float) -> Vector2:
 		var t := mix[o + i * 2]
 		if t < 0.0:
 			break
-		var e := _eligible(int(t), d)
+		var e := _eligible(int(t), d, shore)
 		tot += (mix[o + i * 2 + 1] - prev) * e
 		best = maxf(best, e)
 		prev = mix[o + i * 2 + 1]
@@ -176,7 +177,7 @@ func _mix_pick(slot: int, h: float, d: float, u01: float) -> Vector2:
 		var t := mix[o + i * 2]
 		if t < 0.0:
 			break
-		var e := _eligible(int(t), d)
+		var e := _eligible(int(t), d, shore)
 		acc += (mix[o + i * 2 + 1] - prev) * e
 		prev = mix[o + i * 2 + 1]
 		if e > 0.0:
