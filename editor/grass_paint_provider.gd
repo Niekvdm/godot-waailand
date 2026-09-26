@@ -11,6 +11,10 @@ extends RefCounted
 signal preview_changed            # the plugin keeps GrassEditorPreview in the project metadata
 signal tool_done(tool_id: String)  # a one-shot tool (Pick) finished: the overlay returns to the tool before
 signal ground_rules_requested     # "Ground rules…": the plugin opens the open map's dialog
+signal library_changed            # the layer switched: the bar reads library() again (Terrain3D Extended 1.1)
+
+## The layer the Grass tools paint: the ground's grass, or what floats on water.
+enum Layer { GROUND, WATER }
 
 const SpeciesCard := preload("res://addons/waailand/editor/grass_species_card.gd")
 
@@ -33,10 +37,14 @@ const REPLACE_HINT := "Swaps that painted species for the one chosen in the libr
 const RESET_HINT := "Back to the ground's own rule: species, density, height and force."
 const REMOVE_HINT := "No grass at all, the ground's own included. Ctrl: back to ×1."
 const FORCE_HINT := "Grass grows here whatever the ground (live roads excepted). Ctrl: the ground's rules."
+const NO_WATER_HINT := "No water under the cursor: the Water layer paints only over water sources and the sea."
 const MONTHS := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const SEASONS := [["Winter", 0], ["Spring", 3], ["Summer", 6], ["Autumn", 9]]   # GrassPreviewMenu.DAYS index: the 15th
 
 var paint := GrassPaintTool.new()
+var layer := Layer.GROUND
+var _picked := {Layer.GROUND: -1, Layer.WATER: -1}   # each layer's species while the other is selected
+var _water_hint: Label
 var types: GrassTypes
 var _ui: Node = null
 var _pictures := {}               # species name -> [tile, card] textures (loaded once; null when missing)
@@ -157,7 +165,7 @@ func stroke_begin(p_hit: Vector3, p_brush: Dictionary) -> void:
 	var b: Object = blades_of.call() if blades_of.is_valid() else null
 	if b == null:
 		return
-	var maps: GrassMaps = b.get("grass_maps")
+	var maps := maps_of(b)
 	if active_tool == "grass.pick":
 		paint.apply_pick(maps.pixel(p_hit))
 		_refresh()
@@ -166,6 +174,8 @@ func stroke_begin(p_hit: Vector3, p_brush: Dictionary) -> void:
 	var terrain: Object = b.get("terrain")
 	_brush.maps = maps
 	_brush.data = terrain.get("data") if terrain != null else null
+	_brush.texel_ok = (func(pos: Vector3) -> bool: return not is_nan(float(b.call("water_surface", pos)))) \
+		if layer == Layer.WATER else Callable()
 	_brush.begin()
 	_before.clear()
 	_brush.on_first_change = func(loc: Vector2i) -> void:
@@ -258,7 +268,7 @@ func mode_for(p_tool: String, p_invert: bool) -> GrassPaintTool.Mode:
 func library() -> Dictionary:
 	_load_kinds()
 	var items := []
-	for e in GrassPaintTool.palette(types):
+	for e in _layer_palette():
 		var nm := String(e["name"])
 		var slot: int = e["slot"]
 		var pics := _pictures_of(nm)
@@ -279,10 +289,72 @@ func library_select(p_id: int) -> void:
 	_refresh()
 
 
+## Switches the layer the tools paint: the library shows its species (the bar is told), the selection is the one it
+## had.
+func set_layer(p_layer: Layer) -> void:
+	if p_layer == layer:
+		return
+	_picked[layer] = paint.species
+	layer = p_layer
+	var lib := _layer_palette()
+	var want: int = _picked[layer]
+	if not lib.any(func(e): return int(e["slot"]) == want):
+		want = int(lib[0]["slot"]) if not lib.is_empty() else 0
+	paint.species = want
+	library_changed.emit()
+	_refresh()
+
+
+## The palette of the selected layer's species (GrassPaintTool.palette).
+func _layer_palette() -> Array:
+	var want := GrassTypes.LAYER_SURFACE if layer == Layer.WATER else GrassTypes.LAYER_GROUND
+	return GrassPaintTool.palette(types).filter(func(e): return int(e["layer"]) == want)
+
+
+## The maps the selected layer paints on blades `b`: the grass maps, or the water maps.
+func maps_of(b: Object) -> GrassMaps:
+	return b.get("water_maps" if layer == Layer.WATER else "grass_maps")
+
+
+## Terrain3D Extended 1.1 (tool providers API v3, optional): with Water selected a stroke lands where the view ray meets
+## the water surface over the hit, not on the bed seen through the water; anywhere else, the hit.
+func project_hit(p_from: Vector3, p_dir: Vector3, p_hit: Vector3) -> Vector3:
+	if layer != Layer.WATER:
+		return p_hit
+	var b: Object = blades_of.call() if blades_of.is_valid() else null
+	var s := float(b.call("water_surface", p_hit)) if b != null else NAN
+	if _water_hint != null and is_instance_valid(_water_hint):
+		_water_hint.visible = is_nan(s)
+	if is_nan(s) or absf(p_dir.y) < 1e-4:
+		return p_hit
+	var t := (s - p_from.y) / p_dir.y
+	if t <= 0.0:
+		return p_hit
+	var q := p_from + p_dir * t
+	var s2 := float(b.call("water_surface", q))
+	return Vector3(q.x, s2 if not is_nan(s2) else s, q.z)
+
+
 ## The panel section: the tool's options (spray, force; reset to x1; density or height; the from species; a hint), the
 ## limits and the fill for a painting tool, the season (months, seasons, In bloom, the fine date), then the preview's
 ## eye and every-ground switch, drawn with the overlay's components (`kit`).
 func build_settings(box: VBoxContainer, p_tool: String, kit: Object, accent: Color) -> void:
+	var lr := HBoxContainer.new()
+	var lg := ButtonGroup.new()
+	for pair in [["Ground", Layer.GROUND], ["Water", Layer.WATER]]:
+		var lb: Button = kit.toggle_chip(pair[0], layer == pair[1], accent)
+		lb.button_group = lg
+		lb.tooltip_text = "The grass on the ground" if pair[1] == Layer.GROUND \
+			else "What floats on water (water sources and the sea)"
+		var l: Layer = pair[1]
+		lb.pressed.connect(func() -> void: set_layer(l))
+		lr.add_child(lb)
+	box.add_child(lr)
+	_water_hint = null
+	if layer == Layer.WATER:
+		_water_hint = _hint(NO_WATER_HINT)
+		_water_hint.visible = false
+		box.add_child(_water_hint)
 	match p_tool:
 		"grass.species":
 			box.add_child(_toggle(kit, "Spray (a feathered edge)", paint.spray, set_spray))
@@ -465,13 +537,19 @@ static func _hint(p_text: String) -> Label:
 
 ## Its part of a preset: the species, spray and the tools' options, the limits and the fill.
 func capture(_tool: String) -> Dictionary:
-	return {"species": paint.species, "spray": paint.spray, "reset_density": reset_density,
+	return {"layer": layer, "species": paint.species, "spray": paint.spray, "reset_density": reset_density,
 		"reset_height": reset_height, "smooth_height": smooth_height, "force": paint.force,
 		"replace_from": paint.replace_from, "limit_slope": limit_slope, "slope_range": slope_range,
 		"limit_height": limit_height, "height_range": height_range, "fill_region": fill_region}
 
 
 func apply(_tool: String, state: Dictionary) -> void:
+	if state.has("layer"):
+		var l := int(state["layer"])
+		if l != layer:
+			_picked[layer] = paint.species
+			layer = Layer.WATER if l == Layer.WATER else Layer.GROUND
+			library_changed.emit()
 	paint.species = int(state.get("species", paint.species))
 	paint.spray = bool(state.get("spray", paint.spray))
 	reset_density = bool(state.get("reset_density", reset_density))

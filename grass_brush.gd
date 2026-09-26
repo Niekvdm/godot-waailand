@@ -14,6 +14,7 @@ var maps: GrassMaps = null
 var data: Object = null                  # the terrain's data: get_height, get_normal (the limits)
 var rng := RandomNumberGenerator.new()
 var on_first_change := Callable()        # (loc) before a region's first change this stroke: the undo's "before"
+var texel_ok := Callable()               # (pos: Vector3) -> bool: false leaves the texel (the Water layer: over water)
 var touched := {}                        # loc -> Rect2i: what this stroke changed
 var _filled := false
 var _now := {}                           # loc -> true: changed by this dab (its layer is re-sent)
@@ -84,7 +85,7 @@ func _fill(p_loc: Vector2i, p_y: float, p_t: float, o: Dictionary) -> void:
 	if maps.layer_of(p_loc) < 0:
 		return
 	var n := maps.region_size()
-	if o["mode"] == Mode.SET_HARD and o["slope"] == null and o["height"] == null:
+	if o["mode"] == Mode.SET_HARD and o["slope"] == null and o["height"] == null and not texel_ok.is_valid():
 		if p_t < 0.5:
 			return
 		var img := maps.image(p_loc)
@@ -118,6 +119,8 @@ func _apply(p_pos: Vector3, p_t: float, o: Dictionary) -> void:
 	var n := maps.region_size()
 	var px := _texel(p_pos, n)
 	if px.x < 0 or px.y < 0 or px.x >= n or px.y >= n:
+		return
+	if texel_ok.is_valid() and not bool(texel_ok.call(p_pos)):
 		return
 	if o["height"] != null:
 		var h := float(data.call("get_height", p_pos)) if data != null else NAN
