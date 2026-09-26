@@ -106,9 +106,10 @@ vec2 far_layer(ivec3 i0, ivec3 i1, ivec3 i2, ivec3 i3, vec4 w, out vec4 p0, out 
 	vec2 c3 = far_corner_allow(i3);
 	vec4 a = vec4(c0.x, c1.x, c2.x, c3.x);
 	// A painted override plants at its painted density wherever the ground allows grass (place_at's rule).
+	vec4 kept = vec4(lessThan(vec4(g0.g, g1.g, g2.g, g3.g), vec4(254.5 / 255.0)));   // G 255: removed, nothing grows
 	vec4 painted = step(vec4(0.5 / 255.0), vec4(g0.g, g1.g, g2.g, g3.g)) * step(vec4(1e-6), vec4(c0.y, c1.y, c2.y, c3.y));
 	vec4 forced = far_all_grounds ? vec4(1.0) : vec4(lessThan(vec4(g0.a, g1.a, g2.a, g3.a), vec4(0.5)));   // A < 128
-	a = mix(a, vec4(1.0), max(painted, forced));
+	a = mix(a, vec4(1.0), max(painted, forced)) * kept;
 	kd = w * vec4(g0.r, g1.r, g2.r, g3.r) * (255.0 / 128.0) * a;      // each corner's growth (R/128 x allowance)
 	p0 = far_corner_params(i0, g0);
 	p1 = far_corner_params(i1, g1);

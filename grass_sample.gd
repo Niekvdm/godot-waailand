@@ -25,3 +25,9 @@ var on_road := false
 var pending := false
 ## The water surface the species floats on (GrassBlades.sample_water; NAN from the ground layer's sample).
 var surface_m := NAN
+## The grass map removed the grass here (the Paint tool with Ctrl): nothing grows, the ground's own included.
+var removed := false
+## The species comes from the grass map (painted), not from the ground's own mix.
+var painted := false
+## The painted flower color's palette entry; -1 for Auto (the field's own stripes).
+var color_entry := -1

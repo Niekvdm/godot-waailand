@@ -128,6 +128,7 @@ void main() {
 		int hty;
 		vec4 wt = vec4(WATER_NONE);
 		bool ok = surf ? surface_at(pos, h3.x, pl, hty, wt) : place_at(pos, h3.x, pl, hty);
+		int pcol = PLACE_COLOR;       // the painted flower color (0 and 127: Auto)
 		if (!ok || pl.r <= 0.0 || hty != HOST) {
 			continue;
 		}
@@ -181,7 +182,7 @@ void main() {
 		L2[nlive] = vec4(S.z * s, 0.0, F.z * s, root.z);
 		LC[nlive] = vec4(pack2(h2.z, 0.0), pack2(lay.x * 0.5 + 0.5, lay.y * 0.5 + 0.5),
 			pack2(iv.b, iv.a), pack2(morph, 0.0));
-		LU[nlive] = vec4(s, g, 0.0, 0.0);
+		LU[nlive] = vec4(s, g, (pcol >= 1 && pcol <= 126) ? float(pcol) : 0.0, 0.0);   // z: palette entry + 1, 0 Auto
 		nlive++;
 	}
 	barrier();

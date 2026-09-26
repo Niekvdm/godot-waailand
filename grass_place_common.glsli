@@ -270,6 +270,9 @@ float species_patch(vec2 pos, int slot) {
 // FORCED (A < 128) or the preview grows every ground: then 1. A "painted only" surface (a ground rule) comes
 // as -a: its own grass reads max(a, 0) = 0, a painted override |a|.
 float corner_allow(uint cw, vec4 gt) {
+	if (gt.g > 254.5 / 255.0) {
+		return 0.0;           // removed (GrassMapCodec.REMOVED_G): nothing grows, forced or not
+	}
 	if (gt.a < 0.5 || (FLAGS & FLAG_ALL_GROUNDS) != 0u) {
 		return 1.0;
 	}
@@ -345,7 +348,12 @@ vec4 water_top(vec2 p) {
 // picked in proportion to the GROWTH each contributes (bilinear weight x allowance; blend x allowance):
 // a slot that grows nothing (a gravel overlay, the asphalt across an edge) never lends its species to
 // the blades its neighbour grows. False where a corner's region is not loaded.
+// The picked corner's painted flower color (GrassMapCodec: the force byte's low 7 bits; 0 and 127 Auto), set by
+// place_at and surface_at for the caller that wants it (deco_place.glsl passes it to the flower's shader).
+int PLACE_COLOR = 0;
+
 bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
+	PLACE_COLOR = 0;
 	vec2 g = pos / T_SPACING;
 	ivec2 v0 = ivec2(floor(g));
 	vec2 f = g - vec2(v0);
@@ -390,6 +398,7 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 	} else if (uk < wa.x + wa.y + wa.z) {
 		k = 2;
 	}
+	PLACE_COLOR = int(c[k].a * 255.0 + 0.5) & 127;
 	int ov = int(c[k].g * 255.0 + 0.5) - 1;
 	if (ov >= 0) {
 		ty = min(ov, 31);
@@ -477,6 +486,12 @@ bool surface_at(vec2 pos, float u, out vec4 pl, out int ty, out vec4 wt) {
 	}
 	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
 	int k = u < w.x ? 0 : (u < w.x + w.y ? 1 : (u < w.x + w.y + w.z ? 2 : 3));
+	PLACE_COLOR = int(c[k].a * 255.0 + 0.5) & 127;
+	if (c[k].g > 254.5 / 255.0) {
+		ty = FALLBACK_TYPE;
+		pl.r = 0.0;               // removed: nothing floats
+		return true;
+	}
 	int kind = int(round(wt.y));
 	float dens = kind >= 0 ? T.v[WATER_BASE + kind * 4 + 3].x : 0.0;
 	int ov = int(c[k].g * 255.0 + 0.5) - 1;

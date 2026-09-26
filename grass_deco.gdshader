@@ -5,7 +5,7 @@ shader_type spatial;
 // mesh builder) and its instance (deco_place.glsl):
 //   transform  root + yaw x uniform scale s
 //   COLOR      pack2(seed, 0), pack2(lay dir), pack2(crush, push), pack2(morph, 0)
-//   CUSTOM     s, grow
+//   CUSTOM     s, grow, the painted palette entry + 1 (0: the field's own stripes), 0
 // Mesh: UV = (part, along the part); CUSTOM0 = (LOW position, HIGH wind weight), CUSTOM1 =
 // (LOW normal, LOW wind weight), in model space. The blades' rules hold: no light(), no ALPHA,
 // Godot flips NORMAL for back faces itself, TIME written HERE in vertex() for motion vectors.
@@ -91,7 +91,8 @@ void vertex() {
 	NORMAL = n;
 	v_part = UV;
 	v_morph = morph;
-	v_pal = palette_index(root.xz, pal_cell, pal_n, kind_salt);
+	// A painted color (INSTANCE_CUSTOM.z: palette entry + 1, deco_place.glsl), else the field's own stripes.
+	v_pal = INSTANCE_CUSTOM.z > 0.5 ? mod(INSTANCE_CUSTOM.z - 1.0, pal_n) : palette_index(root.xz, pal_cell, pal_n, kind_salt);
 }
 
 void fragment() {

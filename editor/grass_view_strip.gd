@@ -5,8 +5,9 @@ class_name GrassViewStrip
 extends HBoxContainer
 ## The Grass workspace's view strip (Terrain3D Extended's strip at the top of the 3D view, provider build_view): the
 ## eye (show grass), the year (GrassYearTrack: drag, or a month letter), the date, In bloom (the selected species in
-## flower) and every ground. It sets what the preview shows (GrassEditorPreview), never what a stroke paints. A map
-## that fixes the date (Ground rules) locks the year and says so, with the way to change it.
+## flower), every ground, and Inspect (ⓘ: the brush chip reads what grows under the cursor, and why). It sets what the
+## preview shows (GrassEditorPreview), never what a stroke paints. A map that fixes the date (Ground rules) locks the
+## year and says so, with the way to change it.
 
 const LOCK_TEXT := "Fixed by this map · Ground rules…"
 
@@ -15,6 +16,7 @@ var track: GrassYearTrack
 var date: Label
 var bloom: Button
 var every: Button
+var inspect_btn: Button
 var lock: Button
 var _p: GrassPaintProvider
 
@@ -60,7 +62,11 @@ func setup(p_provider: GrassPaintProvider, p_kit: Object, p_accent: Color) -> vo
 	every = p_kit.tool_button("view_every_ground", "Grow on every ground (the preview only)", p_accent)
 	every.toggled.connect(func(on: bool) -> void: _p.set_preview_all_grounds(on))
 	add_child(every)
-	for b in [eye, every]:                  # slim: the In bloom chip's height, a 14 px icon (the bar's tools are 30)
+	inspect_btn = p_kit.tool_button("view_inspect", "Inspect: the brush chip says what grows under the cursor, and why",
+		p_accent)
+	inspect_btn.toggled.connect(func(on: bool) -> void: _p.inspect = on)
+	add_child(inspect_btn)
+	for b in [eye, every, inspect_btn]:     # slim: the In bloom chip's height, a 14 px icon (the bar's tools are 30)
 		b.expand_icon = true
 		b.custom_minimum_size = Vector2(22.0, 22.0)
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -79,6 +85,7 @@ func refresh() -> void:
 	var fixed := _p.fixed_date()
 	eye.set_pressed_no_signal(GrassEditorPreview.visible)
 	every.set_pressed_no_signal(GrassEditorPreview.all_grounds)
+	inspect_btn.set_pressed_no_signal(_p.inspect)
 	track.locked = fixed >= 0.0
 	track.dimmed = not GrassEditorPreview.visible
 	track.windows = _p.bloom_windows()

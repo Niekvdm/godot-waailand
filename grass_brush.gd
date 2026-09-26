@@ -6,7 +6,9 @@ extends RefCounted
 ## The grass brush: paints GrassMaps' images, so the grass paints on any Terrain3D. One texel per vertex; SET_HARD at weight >= 0.5, SET_SPRAY by a coin per texel (a texel's channels
 ## together), LERP at least one step, SMOOTH toward the 4 neighbours, REPLACE where the first channel holds `from`; several
 ## channels in one stroke; slope and elevation limits; the region fill once a stroke (a hard fill without limits writes
-## the bytes directly). Pure CPU.
+## the bytes directly). A channel may carry a bit mask (`masks`): only those bits are written (the force byte holds
+## the force flag and the flower color). `heal`: a texel whose density is 0 gets x1 back where the stroke changes it
+## (a removal from before the removed marker grows again when painted). Pure CPU.
 
 enum Mode { SET_HARD, SET_SPRAY, LERP, SMOOTH, REPLACE }
 
@@ -26,8 +28,8 @@ func begin() -> void:
 
 
 ## One dab at `center`. brush: {size m, strength 0..1, image, gamma, spin_speed, align_to_view,
-## rotation, pressure}; op: GrassPaintTool.brush_data: {channel, value, mode, channels, values, from, slope, height,
-## fill_region}.
+## rotation, pressure}; op: GrassPaintTool.brush_data: {channel, value, mode, channels, values, masks, heal, from,
+## slope, height, fill_region}.
 func dab(p_center: Vector3, p_brush: Dictionary, p_op: Dictionary) -> void:
 	var channel := int(p_op.get("channel", -1))
 	if maps == null or channel < 0:
@@ -37,7 +39,11 @@ func dab(p_center: Vector3, p_brush: Dictionary, p_op: Dictionary) -> void:
 	if channels.is_empty() or channels.size() != values.size():
 		channels = PackedInt32Array([channel])
 		values = PackedInt32Array([int(p_op.get("value", 0))])
-	var o := {"channels": channels, "values": values, "from": int(p_op.get("from", -1)),
+	var masks: PackedInt32Array = p_op.get("masks", PackedInt32Array())
+	if masks.size() != channels.size():
+		masks = PackedInt32Array()
+	var o := {"channels": channels, "values": values, "masks": masks, "heal": bool(p_op.get("heal", false)),
+		"from": int(p_op.get("from", -1)),
 		"mode": clampi(int(p_op.get("mode", Mode.SET_HARD)), 0, Mode.size() - 1),
 		"slope": p_op.get("slope"), "height": p_op.get("height")}
 	var strength := float(p_brush.get("strength", 1.0)) * clampf(float(p_brush.get("pressure", 1.0)), 0.0, 1.0)
@@ -85,7 +91,8 @@ func _fill(p_loc: Vector2i, p_y: float, p_t: float, o: Dictionary) -> void:
 	if maps.layer_of(p_loc) < 0:
 		return
 	var n := maps.region_size()
-	if o["mode"] == Mode.SET_HARD and o["slope"] == null and o["height"] == null and not texel_ok.is_valid():
+	if o["mode"] == Mode.SET_HARD and o["slope"] == null and o["height"] == null and not texel_ok.is_valid() \
+			and (o["masks"] as PackedInt32Array).is_empty() and not o["heal"]:
 		if p_t < 0.5:
 			return
 		var img := maps.image(p_loc)
@@ -142,16 +149,18 @@ func _apply(p_pos: Vector3, p_t: float, o: Dictionary) -> void:
 	var coin := rng.randf()
 	var dst := src
 	var changed := false
+	var masks: PackedInt32Array = o["masks"]
 	for k in chs.size():
 		var ch := clampi(chs[k], 0, 3)
 		var value := clampi(vals[k], 0, 255)
 		var s := roundi(src[ch] * 255.0)
 		var d := s
+		var set_to := value if masks.is_empty() else (s & ~masks[k] & 0xFF) | (value & masks[k])
 		match o["mode"]:
 			Mode.SET_HARD, Mode.REPLACE:
-				d = value if p_t >= 0.5 else s
+				d = set_to if p_t >= 0.5 else s
 			Mode.SET_SPRAY:
-				d = value if coin < p_t else s
+				d = set_to if coin < p_t else s
 			Mode.LERP:
 				d = roundi(lerpf(float(s), float(value), p_t))
 				if d == s and s != value:
@@ -161,6 +170,8 @@ func _apply(p_pos: Vector3, p_t: float, o: Dictionary) -> void:
 		if d != s:
 			dst[ch] = float(d) / 255.0
 			changed = true
+	if changed and o["heal"] and roundi(dst.r * 255.0) == 0:
+		dst.r = 128.0 / 255.0
 	if not changed:
 		return
 	if not touched.has(loc):

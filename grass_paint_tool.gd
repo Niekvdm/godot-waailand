@@ -8,7 +8,10 @@ extends RefCounted
 ## REPLACE modes write it. Pure: GrassPaintProvider is its UI in the Terrain3D Extended overlay.
 
 enum Mode { SPECIES, ERASE, DENSITY_UP, DENSITY_DOWN, DENSITY_RESET, TALLER, SHORTER, HEIGHT_RESET, SMOOTH_DENSITY, SMOOTH_HEIGHT,
-	REMOVE, RESTORE, FORCE, UNFORCE, REPLACE, RESET }
+	REMOVE, FORCE, UNFORCE, REPLACE, RESET, COLOR, COLOR_AUTO, PATH, PATH_BACK }
+
+## Path's wear levels (Light, Worn, Bare): the density and height bytes it wears toward (128 = x1).
+const WEAR := [[77, 96], [38, 64], [6, 45]]
 
 const CH_DENSITY := 0
 const CH_SPECIES := 1
@@ -22,6 +25,9 @@ var species := 0          # GrassTypes slot
 var spray := false        # species / erase / remove / force: a feathered, probabilistic edge
 var force := false        # Species: force growth in the same stroke
 var replace_from := 0     # Replace: the slot it swaps from
+var force_species := true # Force: plants the chosen species (else only flags the ground: its own mix grows)
+var color := 0            # Color: the palette entry it paints (-1: Auto)
+var wear := 1             # Path: WEAR's level
 
 
 ## GrassBrush's op for the current mode (GrassBrush.dab).
@@ -49,12 +55,17 @@ func brush_data(types: GrassTypes) -> Dictionary:
 		Mode.SMOOTH_HEIGHT:
 			ch = CH_HEIGHT
 			m = GrassBrush.Mode.SMOOTH
-		Mode.REMOVE, Mode.RESTORE:
-			ch = CH_DENSITY
-			v = 0 if mode == Mode.REMOVE else 128
+		Mode.REMOVE:
+			v = GrassMapCodec.REMOVED_G
 		Mode.FORCE, Mode.UNFORCE:
 			ch = CH_FORCE
-			v = GrassMapCodec.FORCED_A if mode == Mode.FORCE else GrassMapCodec.RULES_A
+			v = 0 if mode == Mode.FORCE else GrassMapCodec.FORCE_BIT
+		Mode.COLOR, Mode.COLOR_AUTO:
+			ch = CH_FORCE
+			v = clampi(color + 1, 1, 126) if mode == Mode.COLOR and color >= 0 else GrassMapCodec.COLOR_AUTO
+		Mode.PATH, Mode.PATH_BACK:
+			ch = CH_DENSITY
+			m = GrassBrush.Mode.LERP
 		Mode.REPLACE:
 			m = GrassBrush.Mode.REPLACE
 			v = species + 1
@@ -62,9 +73,25 @@ func brush_data(types: GrassTypes) -> Dictionary:
 			m = GrassBrush.Mode.SET_HARD
 	var d := {"channel": ch, "mode": m, "value": v, "fill": Color8(128, 0, 128, 255),
 		"label": label(types)}
-	if mode == Mode.SPECIES and force:
+	if mode == Mode.SPECIES:
+		d["heal"] = true                  # a density of 0 (a removal from before the marker) grows again
+		if force:
+			d["channels"] = PackedInt32Array([CH_SPECIES, CH_FORCE])
+			d["values"] = PackedInt32Array([species + 1, 0])
+			d["masks"] = PackedInt32Array([0xFF, GrassMapCodec.FORCE_BIT])
+	elif mode == Mode.FORCE and force_species:
 		d["channels"] = PackedInt32Array([CH_SPECIES, CH_FORCE])
-		d["values"] = PackedInt32Array([species + 1, GrassMapCodec.FORCED_A])
+		d["values"] = PackedInt32Array([species + 1, 0])
+		d["masks"] = PackedInt32Array([0xFF, GrassMapCodec.FORCE_BIT])
+		d["heal"] = true
+	elif mode in [Mode.FORCE, Mode.UNFORCE]:
+		d["masks"] = PackedInt32Array([GrassMapCodec.FORCE_BIT])
+	elif mode in [Mode.COLOR, Mode.COLOR_AUTO]:
+		d["masks"] = PackedInt32Array([GrassMapCodec.COLOR_MASK])
+	elif mode in [Mode.PATH, Mode.PATH_BACK]:
+		var target: Array = WEAR[clampi(wear, 0, WEAR.size() - 1)] if mode == Mode.PATH else [128, 128]
+		d["channels"] = PackedInt32Array([CH_DENSITY, CH_HEIGHT])
+		d["values"] = PackedInt32Array([target[0], target[1]])
 	elif mode == Mode.REPLACE:
 		d["from"] = replace_from + 1
 	elif mode == Mode.RESET:
@@ -82,7 +109,7 @@ func label(types: GrassTypes) -> String:
 		Mode.SPECIES:
 			return "Grass: %s%s" % [_name(types, species), " (forced)" if force else ""]
 		Mode.ERASE:
-			return "Grass: erase species"
+			return "Grass: reset the species"
 		Mode.DENSITY_UP:
 			return "Grass: denser"
 		Mode.DENSITY_DOWN:
@@ -101,8 +128,14 @@ func label(types: GrassTypes) -> String:
 			return "Grass: smooth height"
 		Mode.REMOVE:
 			return "Grass: remove"
-		Mode.RESTORE:
-			return "Grass: density x1"
+		Mode.COLOR:
+			return "Grass: color"
+		Mode.COLOR_AUTO:
+			return "Grass: auto color"
+		Mode.PATH:
+			return "Grass: path"
+		Mode.PATH_BACK:
+			return "Grass: grow back"
 		Mode.FORCE:
 			return "Grass: force growth"
 		Mode.UNFORCE:
@@ -127,8 +160,14 @@ func decal_color(types: GrassTypes) -> Color:
 			return Color(0.6, 0.6, 0.6)
 		Mode.DENSITY_UP, Mode.TALLER:
 			return Color(0.35, 0.85, 0.35)
-		Mode.DENSITY_DOWN, Mode.SHORTER:
+		Mode.DENSITY_DOWN, Mode.SHORTER, Mode.PATH:
 			return Color(0.6, 0.42, 0.25)
+		Mode.PATH_BACK:
+			return Color(0.35, 0.85, 0.35)
+		Mode.COLOR:
+			return Color(0.95, 0.45, 0.6)
+		Mode.COLOR_AUTO:
+			return Color(0.8, 0.8, 0.95)
 		Mode.REMOVE:
 			return Color(0.85, 0.3, 0.25)
 		Mode.FORCE:

@@ -29,26 +29,39 @@ const ICON_DIR := "res://addons/waailand/editor/icons"
 ## The Terrain3D Extended tool-providers level these tools need (1.2: the bar's chip, the panel's header and ⋯, the
 ## view strip).
 const NEEDS_LEVEL := 2
-## The Grass workspace's tools, in their groups; ctrl inverts as Terrain3D's do.
+## The Grass workspace's tools, in their groups. A tool with an opposite is one tool: Ctrl gives the opposite, and the
+## bar shows its `inverse` (title, icon, description) while Ctrl is held (Terrain3D Extended 1.2).
 const TOOLS := [
 	{"id": "grass.species", "title": "Paint", "icon": "grass_species", "group": "paint",
-		"description": "Paints the chosen species. Ctrl: erase back to the ground's own."},
+		"description": "Places the chosen species. Hold Ctrl: Remove.",
+		"inverse": {"title": "Remove", "icon": "grass_remove",
+			"description": "Removes the grass: nothing grows here, the ground's own included. Release Ctrl: Paint."}},
+	{"id": "grass.color", "title": "Color", "icon": "grass_color", "group": "paint",
+		"description": "Paints which of a flower's colors grows here. Hold Ctrl: Auto color.",
+		"inverse": {"title": "Auto color", "icon": "grass_color_auto",
+			"description": "Gives the flowers the field's own colors back. Release Ctrl: Color."}},
 	{"id": "grass.replace", "title": "Replace", "icon": "grass_replace", "group": "paint", "source_item": true,
 		"description": "Swaps one painted species (From, in the bar) for the chosen one."},
-	{"id": "grass.erase", "title": "Erase", "icon": "grass_erase", "group": "paint",
-		"description": "Takes the painted species away: the ground's own grows again. Ctrl: paints the chosen species."},
 	{"id": "grass.density", "title": "Density", "icon": "grass_density", "group": "shape",
-		"description": "Thickens or thins the grass. Ctrl: the other way."},
+		"description": "Thickens the grass. Hold Ctrl: thinner.",
+		"inverse": {"title": "Density: thinner", "icon": "grass_density_less",
+			"description": "Thins the grass. Release Ctrl: thicker."}},
 	{"id": "grass.height", "title": "Height", "icon": "grass_height", "group": "shape",
-		"description": "Makes the grass taller or shorter. Ctrl: the other way."},
+		"description": "Makes the grass taller. Hold Ctrl: shorter.",
+		"inverse": {"title": "Height: shorter", "icon": "grass_height_less",
+			"description": "Makes the grass shorter. Release Ctrl: taller."}},
 	{"id": "grass.smooth", "title": "Smooth", "icon": "grass_smooth", "group": "shape",
 		"description": "Evens out the density or the height."},
+	{"id": "grass.path", "title": "Path", "icon": "grass_path", "group": "shape",
+		"description": "Wears a path: thinner, shorter grass with a soft edge. Hold Ctrl: grow back.",
+		"inverse": {"title": "Grow back", "icon": "grass_path_back",
+			"description": "Grows a worn path back to x1. Release Ctrl: Path."}},
 	{"id": "grass.force", "title": "Force", "icon": "grass_force", "group": "rules",
-		"description": "Grass grows here whatever the ground (live roads excepted). Ctrl: back to the ground's rules."},
-	{"id": "grass.remove", "title": "Remove", "icon": "grass_remove", "group": "rules",
-		"description": "No grass at all, the ground's own included. Ctrl: back to ×1."},
+		"description": "Grass grows here whatever the ground (live roads excepted). Hold Ctrl: the ground's rules.",
+		"inverse": {"title": "The ground's rules", "icon": "grass_force_off",
+			"description": "Gives the ground its own rules back. Release Ctrl: Force."}},
 	{"id": "grass.reset", "title": "Reset", "icon": "grass_reset", "group": "rules",
-		"description": "Back to the ground's own rule: species, density, height and force."},
+		"description": "Back to the ground's own rule: everything, or the species only."},
 	{"id": "grass.pick", "title": "Pick", "icon": "grass_pick", "uses_size": false, "uses_strength": false, "hidden": true,
 		"description": "Click the ground: the species it grows becomes the brush's, then back to the tool before."},
 ]
@@ -73,6 +86,12 @@ var slope_range := Vector2(0.0, 30.0)
 var limit_height := false         # ... and its elevation in height_range (m)
 var height_range := Vector2(0.0, 100.0)
 var fill_region := false          # a click paints the whole region under the cursor
+var limit_grounds := false        # ... and its ground texture (the dominant one): only on / not on ground_ids
+var grounds_only := false         # true: only on ground_ids; false: not on them
+var ground_ids := PackedInt32Array()
+var reset_species_only := false   # grass.reset: the species alone (the old Erase)
+var inspect := false              # the view strip's ⓘ: the brush chip reads what grows under the cursor
+var _hover := Vector3(NAN, NAN, NAN)   # the last point under the cursor (project_hit)
 var map_date := Callable()        # () -> float: the open map's fixed date (-1: the clock); the plugin sets it
 var _strip: GrassViewStrip = null # the view strip (build_view), while the overlay shows it
 
@@ -222,8 +241,7 @@ func stroke_begin(p_hit: Vector3, p_brush: Dictionary) -> void:
 	var terrain: Object = b.get("terrain")
 	_brush.maps = maps
 	_brush.data = terrain.get("data") if terrain != null else null
-	_brush.texel_ok = (func(pos: Vector3) -> bool: return not is_nan(float(b.call("water_surface", pos)))) \
-		if layer == Layer.WATER else Callable()
+	_brush.texel_ok = _texel_mask(b, _brush.data)
 	_brush.begin()
 	_before.clear()
 	_brush.on_first_change = func(loc: Vector2i) -> void:
@@ -289,9 +307,11 @@ func activate(p_tool: String, ui: Node) -> void:
 func mode_for(p_tool: String, p_invert: bool) -> GrassPaintTool.Mode:
 	match p_tool:
 		"grass.species":
-			return GrassPaintTool.Mode.ERASE if p_invert else GrassPaintTool.Mode.SPECIES
-		"grass.erase":
-			return GrassPaintTool.Mode.SPECIES if p_invert else GrassPaintTool.Mode.ERASE
+			return GrassPaintTool.Mode.REMOVE if p_invert else GrassPaintTool.Mode.SPECIES
+		"grass.color":
+			return GrassPaintTool.Mode.COLOR_AUTO if p_invert else GrassPaintTool.Mode.COLOR
+		"grass.path":
+			return GrassPaintTool.Mode.PATH_BACK if p_invert else GrassPaintTool.Mode.PATH
 		"grass.density":
 			match density_mode:
 				Adjust.RESET:
@@ -310,14 +330,12 @@ func mode_for(p_tool: String, p_invert: bool) -> GrassPaintTool.Mode:
 			if smooth_channel == Smooth.HEIGHT:
 				return GrassPaintTool.Mode.SMOOTH_HEIGHT
 			return GrassPaintTool.Mode.SMOOTH_DENSITY
-		"grass.remove":
-			return GrassPaintTool.Mode.RESTORE if p_invert else GrassPaintTool.Mode.REMOVE
 		"grass.force":
 			return GrassPaintTool.Mode.UNFORCE if p_invert else GrassPaintTool.Mode.FORCE
 		"grass.replace":
 			return GrassPaintTool.Mode.REPLACE
 		"grass.reset":
-			return GrassPaintTool.Mode.RESET
+			return GrassPaintTool.Mode.ERASE if reset_species_only else GrassPaintTool.Mode.RESET
 	return paint.mode
 
 
@@ -420,6 +438,7 @@ func maps_of(b: Object) -> GrassMaps:
 ## Terrain3D Extended 1.1 (tool providers API v3, optional): with Water selected a stroke lands where the view ray meets
 ## the water surface over the hit, not on the bed seen through the water; anywhere else, the hit.
 func project_hit(p_from: Vector3, p_dir: Vector3, p_hit: Vector3) -> Vector3:
+	_hover = p_hit
 	if layer != Layer.WATER:
 		return p_hit
 	var b: Object = blades_of.call() if blades_of.is_valid() else null
@@ -461,7 +480,80 @@ func workspace_action(p_id: String) -> void:
 
 ## Provider API (Terrain3D Extended 1.2): the brush chip's note, the Water layer off water.
 func cursor_note() -> String:
-	return NO_WATER_NOTE if layer == Layer.WATER and _no_water else ""
+	if layer == Layer.WATER and _no_water:
+		return NO_WATER_NOTE
+	return _inspect_text() if inspect else ""
+
+
+## Inspect's reading of the point under the cursor: what grows there and why.
+func _inspect_text() -> String:
+	var b: Object = blades_of.call() if blades_of.is_valid() else null
+	if b == null or not _hover.is_finite() or not b.has_method("sample"):
+		return ""
+	var s: GrassSample = b.call("sample_water" if layer == Layer.WATER else "sample", _hover)
+	var terrain: Object = b.get("terrain")
+	var ground := _ground_name(_ground_at(terrain.get("data") if terrain != null else null, _hover), terrain)
+	if s.removed:
+		return "nothing grows · removed"
+	if s.on_road:
+		return "nothing grows · a live road"
+	if s.species == &"":
+		return "nothing grows · %s grows nothing (Force would)" % (ground if ground != "" else "this ground")
+	var c: Color = maps_of(b).pixel(_hover)
+	var parts := PackedStringArray([String(s.species).capitalize(),
+		"painted" if s.painted else ("the ground's mix (%s)" % ground if ground != "" else "the ground's mix")])
+	parts.append("×%.1f" % GrassMapCodec.density_mult(c))
+	if c.b8 != 128:
+		parts.append("height ×%.1f" % (float(c.b8) / 128.0))
+	if s.flower != &"" and s.color_entry >= 0:
+		parts.append("color %d" % (s.color_entry + 1))
+	if s.forced:
+		parts.append("forced")
+	return " · ".join(parts)
+
+
+## The brush's texel mask: the Water layer paints only over water; the Grounds limit keeps or skips ground textures.
+func _texel_mask(b: Object, data: Object) -> Callable:
+	var water := layer == Layer.WATER
+	var grounds := limit_grounds and data != null
+	if not water and not grounds:
+		return Callable()
+	var ids := ground_ids
+	var only := grounds_only
+	return func(pos: Vector3) -> bool:
+		if water and is_nan(float(b.call("water_surface", pos))):
+			return false
+		if grounds:
+			var g := _ground_at(data, pos)
+			return ids.has(g) == only
+		return true
+
+
+## The dominant ground texture at pos (Terrain3D's control word: the base, or the overlay where the blend is at least a
+## half); -1 where there is none.
+static func _ground_at(data: Object, pos: Vector3) -> int:
+	if data == null or not data.has_method("get_control"):
+		return -1
+	var cw := int(data.call("get_control", pos))
+	var bl := float((cw >> 14) & 0xFF) / 255.0
+	return (cw >> 22) & 0x1F if bl >= 0.5 else (cw >> 27) & 0x1F
+
+
+static func _ground_name(p_id: int, terrain: Object) -> String:
+	var names := _ground_names(terrain)
+	return names[p_id] if p_id >= 0 and p_id < names.size() else ""
+
+
+## The terrain's texture names, by id (the Grounds limit's chips).
+static func _ground_names(terrain: Object) -> PackedStringArray:
+	var out := PackedStringArray()
+	var assets: Object = terrain.get("assets") if terrain != null else null
+	if assets == null or not assets.has_method("get_texture_count"):
+		return out
+	for i in int(assets.call("get_texture_count")):
+		var ta: Object = assets.call("get_texture_asset", i)
+		out.append(String(ta.call("get_name")) if ta != null else "Texture %d" % i)
+	return out
 
 
 ## Provider API (Terrain3D Extended 1.2): the row under the panel's header, every tool: the layer, and a banner when it
@@ -487,8 +579,21 @@ func build_settings(box: VBoxContainer, p_tool: String, kit: Object, accent: Col
 			box.add_child(_toggle(kit, "Also force growth", paint.force, accent, func(on: bool) -> void:
 				paint.force = on
 				_refresh()))
-		"grass.erase", "grass.remove", "grass.force":
+		"grass.color":
 			box.add_child(_toggle(kit, "Spray edge", paint.spray, accent, set_spray))
+			_swatches(box, kit, accent)
+		"grass.force":
+			box.add_child(_toggle(kit, "Spray edge", paint.spray, accent, set_spray))
+			_mode(box, kit, accent, "Grows", ["The chosen species", "The ground's own mix"], 0 if paint.force_species else 1,
+				func(i: int) -> void:
+					paint.force_species = i == 0)
+		"grass.path":
+			_mode(box, kit, accent, "Wear", ["Light", "Worn", "Bare"], paint.wear, func(i: int) -> void:
+				paint.wear = i)
+		"grass.reset":
+			_mode(box, kit, accent, "Resets", ["Everything", "Species only"], 1 if reset_species_only else 0,
+				func(i: int) -> void:
+					reset_species_only = i == 1)
 		"grass.density":
 			_mode(box, kit, accent, "Density", ["Thicker", "Thinner", "Back to ×1"], density_mode, func(i: int) -> void:
 				density_mode = i as Adjust)
@@ -514,6 +619,98 @@ func build_settings(box: VBoxContainer, p_tool: String, kit: Object, accent: Col
 		func(on: bool, r: Vector2) -> void:
 			limit_height = on
 			height_range = r))
+	_grounds(box, kit, accent)
+
+
+## Only where's third limit: a switch, Only on / Not on, and a chip per terrain texture (the texel's dominant one).
+func _grounds(box: VBoxContainer, kit: Object, accent: Color) -> void:
+	var row: HBoxContainer = kit.toggle_row("Grounds", limit_grounds, accent)
+	row.name = "Grounds"
+	box.add_child(row)
+	var body := VBoxContainer.new()
+	body.visible = limit_grounds
+	box.add_child(body)
+	(row.get_node("Toggle") as CheckBox).toggled.connect(func(on: bool) -> void:
+		limit_grounds = on
+		body.visible = on)
+	body.add_child(kit.segmented(["Only on", "Not on"], 0 if grounds_only else 1, accent, func(i: int) -> void:
+		grounds_only = i == 0))
+	var b: Object = blades_of.call() if blades_of.is_valid() else null
+	var names := _ground_names(b.get("terrain") if b != null else null)
+	if names.is_empty():
+		body.add_child(kit.description("No terrain textures to choose from (open a map with Terrain3D)."))
+		return
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 4)
+	flow.add_theme_constant_override("v_separation", 4)
+	body.add_child(flow)
+	for i in names.size():
+		var chip: Button = kit.toggle_chip(names[i], ground_ids.has(i), accent)
+		var id := i
+		chip.toggled.connect(func(on: bool) -> void:
+			var ids := ground_ids.duplicate()
+			if on and not ids.has(id):
+				ids.append(id)
+			elif not on and ids.has(id):
+				ids.remove_at(ids.find(id))
+			ground_ids = ids)
+		flow.add_child(chip)
+
+
+## Color's swatches: Auto and the selected species' flower colors (its first flower kind, in bloom).
+func _swatches(box: VBoxContainer, kit: Object, accent: Color) -> void:
+	var cols := flower_colors(paint.species)
+	var nm := String(types.row(paint.species).get("name", "")).capitalize() if paint.species < types.rows.size() else ""
+	box.add_child(kit.section("Color · " + nm if nm != "" else "Color"))
+	if cols.is_empty():
+		box.add_child(kit.description("%s has no flowers to color: choose a flowering species in the bar." % nm))
+		return
+	var flow := HFlowContainer.new()
+	flow.name = "Swatches"
+	flow.add_theme_constant_override("h_separation", 5)
+	flow.add_theme_constant_override("v_separation", 5)
+	box.add_child(flow)
+	var group := ButtonGroup.new()
+	var auto: Button = kit.toggle_chip("Auto", paint.color < 0, accent)
+	auto.name = "Auto"
+	auto.button_group = group
+	auto.pressed.connect(func() -> void:
+		paint.color = -1
+		_refresh())
+	flow.add_child(auto)
+	for i in cols.size():
+		var sw := Button.new()
+		sw.name = "Swatch%d" % i
+		sw.toggle_mode = true
+		sw.button_group = group
+		sw.button_pressed = paint.color == i
+		sw.focus_mode = Control.FOCUS_NONE
+		sw.custom_minimum_size = Vector2(22, 22)
+		sw.tooltip_text = "Color %d" % (i + 1)
+		for st in ["normal", "hover", "pressed", "hover_pressed"]:
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = cols[i]
+			sb.set_corner_radius_all(11)
+			if st.begins_with("pressed") or st == "hover_pressed":
+				sb.set_border_width_all(2)
+				sb.border_color = Color.WHITE
+			sw.add_theme_stylebox_override(st, sb)
+		var e := i
+		sw.pressed.connect(func() -> void:
+			paint.color = e
+			_refresh())
+		flow.add_child(sw)
+
+
+## A species' flower colors in bloom (sRGB; its first flower kind that is not out every day); empty without flowers.
+func flower_colors(p_slot: int) -> Array:
+	_load_kinds()
+	for i in _kinds.kinds.size():
+		var k: Dictionary = _kinds.kinds[i]
+		if int(k["host"]) != p_slot or (k["bloom"] as Vector4).x < 0.0:
+			continue
+		return _kinds.colours(i, 1.0).map(func(c): return (c as Color).linear_to_srgb())
+	return []
 
 
 ## A tool's mode: its heading and a segmented control; a pick sets it through `p_set` and refreshes the brush.
@@ -560,7 +757,10 @@ func capture(_tool: String) -> Dictionary:
 	return {"layer": layer, "species": paint.species, "spray": paint.spray, "density_mode": density_mode,
 		"height_mode": height_mode, "smooth_channel": smooth_channel, "force": paint.force,
 		"replace_from": paint.replace_from, "limit_slope": limit_slope, "slope_range": slope_range,
-		"limit_height": limit_height, "height_range": height_range, "fill_region": fill_region}
+		"limit_height": limit_height, "height_range": height_range, "fill_region": fill_region,
+		"color": paint.color, "force_species": paint.force_species, "wear": paint.wear,
+		"reset_species_only": reset_species_only, "limit_grounds": limit_grounds, "grounds_only": grounds_only,
+		"ground_ids": ground_ids}
 
 
 ## A preset's part; one saved by Waailand 1.4 (reset_density, reset_height, smooth_height) keeps its meaning.
@@ -590,6 +790,14 @@ func apply(_tool: String, state: Dictionary) -> void:
 	limit_slope = bool(state.get("limit_slope", limit_slope))
 	limit_height = bool(state.get("limit_height", limit_height))
 	fill_region = bool(state.get("fill_region", fill_region))
+	paint.color = int(state.get("color", paint.color))
+	paint.force_species = bool(state.get("force_species", paint.force_species))
+	paint.wear = int(state.get("wear", paint.wear))
+	reset_species_only = bool(state.get("reset_species_only", reset_species_only))
+	limit_grounds = bool(state.get("limit_grounds", limit_grounds))
+	grounds_only = bool(state.get("grounds_only", grounds_only))
+	if state.get("ground_ids") is PackedInt32Array:
+		ground_ids = state["ground_ids"]
 	if state.get("slope_range") is Vector2:
 		slope_range = state["slope_range"]
 	if state.get("height_range") is Vector2:

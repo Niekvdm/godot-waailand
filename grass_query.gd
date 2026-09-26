@@ -59,6 +59,10 @@ func sample(pos: Vector3) -> GrassSample:
 		cw.append(int(control.call(v)))
 		hs.append(h)
 	var w: Array[float] = [(1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y]
+	var near := 0
+	for i in 4:
+		near = i if w[i] > w[near] else near
+	s.removed = GrassMapCodec.removed(c[near])
 	var gh := lerpf(lerpf(hs[0], hs[1], f.x), lerpf(hs[2], hs[3], f.x), f.y)
 	var wt := _water_top(p)
 	var depth := wt.x - gh if wt.x > GrassWater.NONE else -100.0
@@ -79,7 +83,9 @@ func sample(pos: Vector3) -> GrassSample:
 	if total <= 0.0:
 		return s
 	var dens := r * (255.0 / 128.0) * total
-	var ty := c[k].g8 - 1
+	s.color_entry = GrassMapCodec.color_index(c[k])
+	var ty := GrassMapCodec.override_type(c[k])
+	s.painted = ty >= 0
 	if ty >= 0:
 		ty = mini(ty, 31)
 		dens *= _eligible(ty, depth, shore)
@@ -145,6 +151,8 @@ func _water_top(p: Vector2) -> Vector4:
 ## A corner's allowance (corner_allow): 1 where forced or on the editor's every-ground preview; 1 at a painted override
 ## on ground that allows any grass; else the control word's base and overlay allowances blended.
 func _corner_allow(cw: int, t: Color) -> float:
+	if GrassMapCodec.removed(t):
+		return 0.0
 	if t.a < 0.5 or all_grounds:
 		return 1.0
 	var ab := _allow((cw >> 27) & 0x1F)
@@ -230,10 +238,15 @@ func sample_water(pos: Vector3) -> GrassSample:
 		if w[i] > w[k]:
 			k = i
 	var ck: Color = water_texel.call(v0 + CORNERS[k])
+	s.removed = GrassMapCodec.removed(ck)
+	if s.removed:
+		return s
+	s.color_entry = GrassMapCodec.color_index(ck)
 	var kind := roundi(wt.y)
 	var o := kind * GrassTerrainGrowth.WATER_VEC4 * 4
 	var dens_k := water_mix[o + 12] if kind >= 0 and o + 12 < water_mix.size() else 0.0
-	var ty := ck.g8 - 1
+	var ty := GrassMapCodec.override_type(ck)
+	s.painted = ty >= 0
 	var dens := r * (255.0 / 128.0) * (1.0 if ty >= 0 or ck.a < 0.5 else dens_k)
 	if ty >= 0:
 		ty = mini(ty, 31)
@@ -326,7 +339,8 @@ func _flower(s: GrassSample, ty: int, p: Vector2) -> void:
 		var cols := kinds.colours(i, st.y)
 		if cols.is_empty():
 			continue
-		var pi := GrassHash.palette_index(p, kd["cell"], cols.size(), kinds.palette_salt(i))
+		var pi := s.color_entry % cols.size() if s.color_entry >= 0 \
+			else GrassHash.palette_index(p, kd["cell"], cols.size(), kinds.palette_salt(i))
 		s.flower = StringName(kd["name"])
 		s.flower_colour = (cols[pi] as Color).linear_to_srgb()
 		return
