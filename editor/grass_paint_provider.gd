@@ -5,7 +5,8 @@ class_name GrassPaintProvider
 extends RefCounted
 ## The grass tool of the Terrain3D Extended overlay (1.2, tool providers level 2): the Grass workspace, painting the
 ## grass maps itself (provider API v3: GrassBrush on GrassMaps). Ten tools in three groups with ctrl inverting
-## (GrassPaintTool's modes), Pick behind the bar's eyedropper, Replace's From in the bar's source chip; the species
+## (GrassPaintTool's modes), Pick behind the bar's eyedropper, Replace's From in the bar's source chip, Color's swatches
+## in its hover flyout; the species
 ## library by pack; the panel's header (Ground | Water, an empty layer's banner), ⋯ (Species…, Ground rules…) and the
 ## tool's section (its options, its mode, Apply, Only where); the view strip (GrassViewStrip); one undo action a
 ## stroke; a preset part. The Waailand plugin registers it.
@@ -36,7 +37,7 @@ const TOOLS := [
 		"description": "Places the chosen species. Hold Ctrl: Remove.",
 		"inverse": {"title": "Remove", "icon": "grass_remove",
 			"description": "Removes the grass: nothing grows here, the ground's own included. Release Ctrl: Paint."}},
-	{"id": "grass.color", "title": "Color", "icon": "grass_color", "group": "paint",
+	{"id": "grass.color", "title": "Color", "icon": "grass_color", "group": "paint", "flyout": true,
 		"description": "Paints which of a flower's colors grows here. Hold Ctrl: Auto color.",
 		"inverse": {"title": "Auto color", "icon": "grass_color_auto",
 			"description": "Gives the flowers the field's own colors back. Release Ctrl: Color."}},
@@ -686,11 +687,12 @@ func _grounds(box: VBoxContainer, kit: Object, accent: Color) -> void:
 		flow.add_child(chip)
 
 
-## Color's swatches: Auto and the selected species' flower colors (its first flower kind, in bloom).
-func _swatches(box: VBoxContainer, kit: Object, accent: Color) -> void:
+## Color's swatches: Auto, then the selected species' flower colors (its first flower kind, in bloom). `p_done`: the
+## bar's flyout (build_flyout), headed by the species alone (the flyout's title says Color) and told after a pick.
+func _swatches(box: VBoxContainer, kit: Object, accent: Color, p_done := Callable()) -> void:
 	var cols := flower_colors(paint.species)
 	var nm := String(types.row(paint.species).get("name", "")).capitalize() if paint.species < types.rows.size() else ""
-	box.add_child(kit.section("Color · " + nm if nm != "" else "Color"))
+	box.add_child(kit.section(nm if p_done.is_valid() else ("Color · " + nm if nm != "" else "Color")))
 	if cols.is_empty():
 		box.add_child(kit.description("%s has no flowers to color: choose a flowering species in the bar." % nm))
 		return
@@ -705,7 +707,9 @@ func _swatches(box: VBoxContainer, kit: Object, accent: Color) -> void:
 	auto.button_group = group
 	auto.pressed.connect(func() -> void:
 		paint.color = -1
-		_refresh())
+		_refresh()
+		if p_done.is_valid():
+			p_done.call())
 	flow.add_child(auto)
 	for i in cols.size():
 		var sw := Button.new()
@@ -727,8 +731,17 @@ func _swatches(box: VBoxContainer, kit: Object, accent: Color) -> void:
 		var e := i
 		sw.pressed.connect(func() -> void:
 			paint.color = e
-			_refresh())
+			_refresh()
+			if p_done.is_valid():
+				p_done.call())
 		flow.add_child(sw)
+
+
+## Provider API (Terrain3D Extended 1.2, a "flyout" tool): hovering Color in the bar shows its swatches; a pick there
+## calls `done` (the overlay activates Color).
+func build_flyout(p_tool: String, box: VBoxContainer, kit: Object, accent: Color, done: Callable) -> void:
+	if p_tool == "grass.color":
+		_swatches(box, kit, accent, done)
 
 
 ## A species' flower colors in bloom (sRGB; its first flower kind that is not out every day); empty without flowers.

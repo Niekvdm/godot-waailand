@@ -183,7 +183,7 @@ every stroke: the tools in three groups (Paint, Color, Replace; Density, Height,
 for a tool's opposite, and the bar shows it: Paint removes, Color goes back to Auto), the species chip (click it for the picker; the eyedropper beside it takes the species under the
 cursor), size and strength. The panel holds only the tool's settings: what it
 does, its options and mode, Apply (under the brush or the whole region) and Only where (slope, elevation, grounds).
-Color paints a flower's own colors (a tulip row in red); Inspect (ⓘ on the strip) says on the brush chip what grows
+Color paints a flower's own colors (a tulip row in red; hover Color in the bar for its swatches); Inspect (ⓘ on the strip) says on the brush chip what grows
 under the cursor, and why. Species…
 and Ground rules… are behind the panel's ⋯. Each stroke is one undo step; the maps are saved with the scene, one image
 per region beside Terrain3D's region files.

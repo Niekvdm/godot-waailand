@@ -26,6 +26,8 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
 - Color paints which of a flower's colors grows (the selected species' palette, or Auto: the field's own stripes).
   Stored in the force byte's low 7 bits; existing maps read as Auto. Flowers, the far-away blades' flower tint (the
   color rides in the blade instance's spare COLOR bits) and `sample()` honour it.
+- Hovering Color in the bar opens its swatches above it (Terrain3D Extended's hover flyout): a click picks the color
+  and switches to Color.
 - Path wears a path (Light, Worn, Bare) and grows it back; Inspect (ⓘ on the view strip) puts what grows under the
   cursor, and why, on the brush chip.
 - The paint overlay (the view strip's layers button, ▾ for the mode and its key; also the Grass menu's "Paint
