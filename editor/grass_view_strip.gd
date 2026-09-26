@@ -30,11 +30,19 @@ func setup(p_provider: GrassPaintProvider, p_kit: Object, p_accent: Color) -> vo
 	track.day_changed.connect(func(d: float) -> void: _p.set_preview_day(d))
 	add_child(track)
 	lock = Button.new()
-	lock.flat = true
 	lock.text = LOCK_TEXT
 	lock.tooltip_text = "This map's Ground rules set its date: open them to change it"
 	lock.focus_mode = Control.FOCUS_NONE
 	lock.add_theme_font_size_override("font_size", 11)
+	var pill := StyleBoxFlat.new()          # a dark pill over the greyed year, so the link reads
+	pill.bg_color = Color(0.08, 0.09, 0.08, 0.92)
+	pill.set_corner_radius_all(10)
+	pill.content_margin_left = 10.0
+	pill.content_margin_right = 10.0
+	pill.content_margin_top = 2.0
+	pill.content_margin_bottom = 2.0
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		lock.add_theme_stylebox_override(st, pill)
 	track.add_child(lock)
 	lock.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_MINSIZE)
 	lock.pressed.connect(func() -> void: _p.ground_rules_requested.emit())
