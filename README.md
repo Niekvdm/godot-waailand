@@ -2,11 +2,16 @@
 
 GPU grass, flowers and seasons for [Terrain3D](https://github.com/TokisanGames/Terrain3D), for Godot 4.
 
-| | | | | |
-|---|---|---|---|---|
-| ![Lawn](packs/starter/pictures/lawn_card.png) | ![Meadow](packs/starter/pictures/meadow_card.png) | ![Tall grass](packs/starter/pictures/tall_grass_card.png) | ![Tufts](packs/starter/pictures/tufts_card.png) | ![Daisies](packs/starter/pictures/daisies_card.png) |
+![Waailand: tulip beds, a bulb field by a ditch, rice terraces through a year, a lotus pond, kochia in the wind](media/waailand.webp)
 
-<!-- A screenshot of the grass on a terrain goes here: the editor preview or the game, wide, in good light. -->
+| | | |
+|---|---|---|
+| ![Tulip beds in April](media/tulips.jpg) | ![Hyacinths in April](media/hyacinths.jpg) | ![Reed and cattails along a ditch, duckweed on the water](media/ditch.jpg) |
+| ![Lotus and water lilies floating on a pond](media/pond.jpg) | ![Kochia turning red in October](media/kochia.jpg) | ![Rows of tea](media/tea.jpg) |
+
+<sub>Rendered in the game view with two species packs made for Waailand: Waailand Nederland (bulb fields, a polder's
+ditches) and Waailand Nihon (a garden pond, kochia, tea, rice terraces). Every blade and flower is Waailand's; the
+terrain, water planes and sky are the demos' own.</sub>
 
 Every frame a compute shader turns the grid cells around the camera into grass blades, from the terrain under them
 and a painted grass map, so nothing per blade runs on the CPU. Species come in packs and grow by the terrain texture
@@ -39,6 +44,10 @@ any point, for footsteps and tyre effects.
 2. Add a `GrassBlades` node as a child of your `Terrain3D` node (it finds the terrain up its parent chain; or set its
    `terrain`).
 3. The grass grows at once, in the editor (a preview on the editor's camera) and in the game.
+
+| | | | | |
+|---|---|---|---|---|
+| ![Lawn](packs/starter/pictures/lawn_card.png) | ![Meadow](packs/starter/pictures/meadow_card.png) | ![Tall grass](packs/starter/pictures/tall_grass_card.png) | ![Tufts](packs/starter/pictures/tufts_card.png) | ![Daisies](packs/starter/pictures/daisies_card.png) |
 
 The starter pack holds lawn, meadow (the fallback: what grows where nothing else is chosen), tall grass with seed
 plumes, tufts, and daisies. Until you add ground rules or a growth table, every ground that allows grass grows the
@@ -123,6 +132,12 @@ of it or nothing); double-click a species for the first free slot; drag a slot o
 make its species the fallback. Only active species grow, appear in the Grass library and the Ground rules dialog, and
 bring their flowers. A growth table or ground rule naming an installed species that is not active grows nothing of it,
 and the dialog lists such names. Every change is written at once and is one undo step.
+
+![The Species dialog: the installed packs as a tree beside the 32 active slots](media/species_dialog.jpg)
+
+<sub>Two packs installed, 23 species active. Three of the flower field's are not (bright in the library, their slots
+dashed), so the growth table's mention of them grows nothing, as the warning says. A corner fold marks a layer: blue
+for floating, teal for under water.</sub>
 
 The active set is the project's slot table (`slots_path`): each species' slot, which is what the grass maps store for
 a painted texel, and the fallback. Giving a slot to another species changes what grass painted on it grows (the
@@ -222,6 +237,8 @@ game the grass keeps a small cache of region maps for it, read on a worker threa
 reads as unpainted and says `pending`.
 
 ## Seasons, the sea, roads and downwash
+
+![Rice terraces through a year: flooded with young rice in May, grown in July, ripe in September, drained in December](media/seasons.jpg)
 
 - **Seasons.** `set_date(day)` (0 is 1 January) moves every species through its year: accent colours, heights,
   flowers in bud, bloom and seed. The ground rules can pin a species to a stage or a date.
