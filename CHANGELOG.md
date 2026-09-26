@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.0 (2026-09-26)
+
+Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace off on an older one).
+
+- The Grass workspace, reorganised by what changes when. The bar: the tools in three groups (Paint: Paint, Replace,
+  Erase; Shape: Density, Height, Smooth; Rules: Force, Remove, Reset), the species chip with a picker (a search, the
+  favourites, the species by pack, hover cards), your last five species, the eyedropper (Pick), and Replace's From.
+- The panel holds only the tool's settings: a line saying what it does, its brush options, its mode (Density and
+  Height: Thicker/Taller, Thinner/Shorter, Back to ×1; Smooth: Density or Height), Apply (under the brush or the whole
+  region) and Only where (slope and elevation, each a switch and one range). Ground | Water and an empty layer's banner
+  sit under its header; Species… and Ground rules… are behind ⋯.
+- The view strip at the top of the 3D view: show grass, the year as one track by season (drag it, or a month letter
+  for its 15th), the date, In bloom with the selected species' flowering windows, every ground; a map's fixed date
+  locks it and links its Ground rules.
+- "no water here" on the brush chip in place of the panel's hint. Presets saved by 1.4 keep their meaning.
+- `GrassSeason.spans`; `GrassYearTrack`, `GrassViewStrip`.
+
 ## 1.4.0 (2026-09-26)
 
 - Installed and active species: any number of packs can be installed, and none costs anything until its species are

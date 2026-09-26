@@ -26,8 +26,8 @@ any point, for footsteps and tyre effects.
 - Terrain3D 1.1 (tested on 1.1.0-dev, the upstream main branch at 188873b; a Terrain3D build with streaming also works).
 - The Forward+ renderer: the grass is placed by compute shaders, which the Compatibility renderer cannot run (the
   Mobile renderer is untested).
-- Optional: [Terrain3D Extended](https://github.com/Niekvdm/godot-terrain3d-extended), the editing overlay, for
-  painting the grass.
+- Optional: [Terrain3D Extended](https://github.com/Niekvdm/godot-terrain3d-extended) 1.2 or newer, the editing
+  overlay, for painting the grass.
 
 ## Install
 
@@ -178,22 +178,24 @@ carry; the sea's is `Zee`): a density and a mix of surface species. A kind with 
 
 ## Painting
 
-With Terrain3D Extended installed, the plugin adds a **Grass** workspace: Species, Erase (back to the ground's
-species), Remove (no grass at all), Density, Height, Smooth, Force (grow whatever the ground), Replace (swap one
-painted species for another), Reset (back to the ground's rule) and Pick (take the species under the cursor); ctrl
-inverts a tool. The panel holds the species library with pictures and hover cards, the slope and elevation limits, a
-region fill, and the preview's date, and opens the Species and Ground rules dialogs. Each stroke is one undo step; the
-maps are saved with the scene, one image per region beside Terrain3D's region files.
+With Terrain3D Extended 1.2 or newer installed, the plugin adds a **Grass** workspace. The bar holds what you change
+every stroke: the tools in three groups (Paint, Replace, Erase; Density, Height, Smooth; Force, Remove, Reset; ctrl
+inverts a tool), the species chip (click it for the picker, or take one of your last five species beside it; the
+eyedropper takes the species under the cursor), size and strength. The panel holds only the tool's settings: what it
+does, its options and mode, Apply (under the brush or the whole region) and Only where (slope, elevation). Species…
+and Ground rules… are behind the panel's ⋯. Each stroke is one undo step; the maps are saved with the scene, one image
+per region beside Terrain3D's region files.
 
 ![The Grass workspace: tulips painted across a lawn with the Species tool, the library on the left, the tools and the brush below](media/painting.jpg)
 
-The panel's **Ground / Water** switch picks the layer the tools paint: Water shows the surface species in the
+The panel's **Ground | Water** switch picks the layer the tools paint: Water shows the surface species in the
 library, paints the water maps (their own images, in `<maps_folder>_water`) and lands the stroke where the view ray
-meets the water surface (with Terrain3D Extended 1.1; with 1.0 the stroke lands on the bed under the water). Over
-ground with no water the Water layer paints nothing, and the panel says so.
+meets the water surface. Over ground with no water the Water layer paints nothing, and the brush chip says so.
 
-The 3D toolbar's **Grass** menu shows or hides the preview, grows it on every ground (to see what a species would
-look like anywhere), and sets the date the preview shows.
+The strip at the top of the 3D view sets what the preview shows: the grass on or off, the date (drag the year, or a
+month letter for its 15th; In bloom jumps to the selected species in flower), and every ground (to see what a species
+would look like anywhere). A map whose Ground rules fix the date shows it locked. The 3D toolbar's **Grass** menu does
+the same outside the Grass workspace.
 
 ## Feeding the grass
 

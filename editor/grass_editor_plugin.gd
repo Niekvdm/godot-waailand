@@ -59,10 +59,14 @@ func _save() -> void:
 	es.set_project_metadata(GrassEditorPreview.SECTION, KEY_ALL_GROUNDS, GrassEditorPreview.all_grounds)
 
 
-## The grass paint tool lives in the Terrain3D Extended overlay: without it there is none (Terrain3D's own "Side Map"
-## button paints nothing grass-specific).
+## The grass paint tool lives in the Terrain3D Extended overlay (1.2 or newer): without it there is none (Terrain3D's
+## own "Side Map" button paints nothing grass-specific).
 func _register_paint() -> void:
 	if not ResourceLoader.exists(PROVIDERS):
+		return
+	var level := GrassPaintProvider.overlay_level(load(PROVIDERS))
+	if level < GrassPaintProvider.NEEDS_LEVEL:
+		push_error("Waailand 1.5 needs Terrain3D Extended 1.2 or newer for its Grass tools (tool providers level %d, found %d): the Grass workspace is off." % [GrassPaintProvider.NEEDS_LEVEL, level])
 		return
 	_paint = GrassPaintProvider.new(GrassTypes.new())
 	_paint.preview_changed.connect(_on_preview_changed)

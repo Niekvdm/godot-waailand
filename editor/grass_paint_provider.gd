@@ -26,6 +26,9 @@ enum Smooth { DENSITY, HEIGHT }
 const SpeciesCard := preload("res://addons/waailand/editor/grass_species_card.gd")
 
 const ICON_DIR := "res://addons/waailand/editor/icons"
+## The Terrain3D Extended tool-providers level these tools need (1.2: the bar's chip, the panel's header and ⋯, the
+## view strip).
+const NEEDS_LEVEL := 2
 ## The Grass workspace's tools, in their groups; ctrl inverts as Terrain3D's do.
 const TOOLS := [
 	{"id": "grass.species", "title": "Paint", "icon": "grass_species", "group": "paint",
@@ -76,6 +79,11 @@ var _strip: GrassViewStrip = null # the view strip (build_view), while the overl
 
 func _init(p_types: GrassTypes = null) -> void:
 	types = p_types if p_types != null else GrassTypes.new()
+
+
+## A tool_providers.gd script's level: its LEVEL, else 1 (Terrain3D Extended 1.1 and older); 0 for none.
+static func overlay_level(p_providers: Script) -> int:
+	return int(p_providers.get_script_constant_map().get("LEVEL", 1)) if p_providers != null else 0
 
 
 ## The brush data for the activated tool, ctrl (`p_invert`) inverting it.
