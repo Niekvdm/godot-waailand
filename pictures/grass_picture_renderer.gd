@@ -230,7 +230,8 @@ static func _water_plane(level: float) -> MeshInstance3D:
 	pm.size = PATCH.grow(1.0).size
 	var m := StandardMaterial3D.new()
 	m.albedo_color = WATER
-	m.roughness = 0.15
+	m.roughness = 0.55                       # still water, but no mirror of the sun: the plants are the picture
+	m.metallic_specular = 0.25
 	pm.material = m
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
