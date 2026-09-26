@@ -161,7 +161,8 @@ godot --path <project> res://addons/waailand/tools/render_pictures.tscn -- --pac
 
 The terrain decides by default. The **growth table** (a JSON file, the config's `growth_path`) says, per Terrain3D
 texture name, how much grass the ground allows (0 to 1) and which species grow there (a mix, and optionally another
-mix above an elevation). Repainting the terrain moves the grass with it.
+mix above an elevation). `"painted_only": true` turns a ground's own grass off while what you paint there still grows
+at its density: a fallow bed that takes whatever you plant. Repainting the terrain moves the grass with it.
 
 A map can have its own **ground rules**, edited in the **Ground rules** dialog (the Grass workspace's panel, "Ground
 rules…"): rules that group surfaces and give each group its own grass on or off, density, species mix and elevation

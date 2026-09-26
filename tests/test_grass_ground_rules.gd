@@ -157,6 +157,21 @@ func test_from_rules() -> void:
 	assert_eq(tz[0], 0.0, "a rule that grows nothing stays 0, painted only or not")
 
 
+## The shared growth table says it too: a slot with "painted_only": true grows nothing of its own, and what is painted
+## there grows at its density (a fallow bulb bed): table_for negates it as for a rule whose own grass is off.
+func test_the_growth_table_painted_only() -> void:
+	var g := GrassTerrainGrowth.from_json_text(JSON.stringify({"default": 1.0, "slots": {
+		"Fallow": {"density": 0.8, "painted_only": true}, "Lawn": 1.0, "Bed": {"density": 1.0, "painted_only": false}}}))
+	assert_eq(g.errors, PackedStringArray(), "no errors")
+	assert_true(g.painted_only.has("fallow") and not g.painted_only.has("lawn") and not g.painted_only.has("bed")
+		and not g.painted_only_rest, "Fallow alone is painted only")
+	var t := g.table_for(_assets(["Lawn", "Fallow", "Bed"]))
+	assert_true(is_equal_approx(t[0], 1.0) and is_equal_approx(t[1], -0.8) and is_equal_approx(t[2], 1.0),
+		"its allowance negated (%s)" % [t.slice(0, 3)])
+	g._load_text(JSON.stringify({"slots": {"Lawn": 1.0}}))
+	assert_true(g.painted_only.is_empty(), "a reload forgets it")
+
+
 func _assets(names: Array) -> Resource:
 	var a: Resource = ClassDB.instantiate("Terrain3DAssets")
 	for i in names.size():

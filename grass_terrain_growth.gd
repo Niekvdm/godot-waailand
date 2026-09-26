@@ -5,7 +5,8 @@ class_name GrassTerrainGrowth
 extends RefCounted
 ## What grows on which terrain texture, and how densely. The growth table (GrassBladesConfig.growth_path)
 ## maps Terrain3D texture slot NAMES to either an allowance 0..1 (a number: grows `default_species`) or
-## {density, species: {type name: weight}, bands: [{above_m, species}]}. The blade and decoration compute
+## {density, species: {type name: weight}, bands: [{above_m, species}], painted_only} (painted_only true: its own grass
+## is off, and what is painted or forced there grows at its density: a fallow bed). The blade and decoration compute
 ## read the control map, so repainting the terrain moves the grass (its density AND its species) with no
 ## reseed. Keyed by name, so a slot re-numbered in the assets keeps
 ## its rule; table_for() and mix_bytes() resolve names to ids through the terrain's own assets.
@@ -32,7 +33,8 @@ var water_by_name := {}         # lower-case water kind -> {"density": 0..1, "sp
 var water_names := PackedStringArray()   # the kinds as the table writes them, in its order: their index
 var fallback := 1.0             # a slot the table does not name
 var errors: PackedStringArray = []
-## Ground rules: slots whose own grass is off (only painted species and forced spots grow there). table_for writes their allowance negated.
+## Slots whose own grass is off (only painted species and forced spots grow there): a ground rule's own grass off, or a
+## growth table slot's painted_only. table_for writes their allowance negated.
 var painted_only := {}          # lower-case slot name -> true
 var painted_only_rest := false  # every name no rule lists (Everything else off, or the map's master switch)
 
@@ -68,6 +70,8 @@ func _load_text(text: String) -> void:
 	species_by_name.clear()
 	band_by_name.clear()
 	display_names.clear()
+	painted_only.clear()
+	painted_only_rest = false
 	water_by_name.clear()
 	water_names.clear()
 	default_species = pack_default_mix()
@@ -97,6 +101,8 @@ func _load_text(text: String) -> void:
 				var b := _band(v["bands"], k, known)
 				if not b.is_empty():
 					band_by_name[key] = b
+			if bool(v.get("painted_only", false)):
+				painted_only[key] = true
 		if typeof(dens) != TYPE_FLOAT and typeof(dens) != TYPE_INT:
 			errors.append("%s: no numeric density" % k)
 			continue

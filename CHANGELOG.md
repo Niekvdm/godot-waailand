@@ -35,6 +35,8 @@ Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace 
   hatched red, forced striped orange, painted colors dotted), Density or Height (blue below ×1, warm above). Drawn by
   `grass_far.gdshaderinc` (`grass_overlay_apply`), so a terrain shader that includes the far field draws it with no
   change; the button is off offer on one that does not. `GrassOverlay`, `GrassEditorPreview.overlay`.
+- A growth table's slot can be `"painted_only": true`: its own grass is off, what is painted there grows at its
+  density (as a ground rule with its own grass off).
 - `GrassSeason.spans`; `GrassYearTrack`, `GrassViewStrip`.
 
 ## 1.4.0 (2026-09-26)
