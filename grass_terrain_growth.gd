@@ -15,6 +15,8 @@ const FROM_CONFIG := "<config>"
 const SLOTS := 32               # Terrain3D texture ids (5 bits in the control word)
 const MIX_PAIRS := 6            # species per mix (and per band)
 const MIX_VEC4 := 7             # per texture id: 3 vec4 mix, 3 vec4 band mix, 1 vec4 (above_m, has_band, 0, 0)
+const WATER_KINDS := 16         # water kinds with an entry (grass_place_common.glsli WATER_KINDS)
+const WATER_VEC4 := 4           # per water kind: 3 vec4 floating mix, then (density, 0, 0, 0)
 ## What a ground with no species grows: the resolved default mix of the config's packs. A growth table's own
 ## default_species, and a map's ground rules, come first.
 static func pack_default_mix() -> Dictionary:
@@ -25,6 +27,9 @@ var species_by_name := {}       # lower-case slot name -> {type name: weight}, n
 var band_by_name := {}          # lower-case slot name -> {above_m, species}
 var display_names := {}         # lower-case slot name -> the name as the table writes it
 var default_species := {}       # {type name: weight}, normalised: what a slot with no species grows
+## The water section: what floats on each kind of water (its sources' `water_kind`; the sea is GrassWater.SEA_KIND).
+var water_by_name := {}         # lower-case water kind -> {"density": 0..1, "species": {type name: weight}}
+var water_names := PackedStringArray()   # the kinds as the table writes them, in its order: their index
 var fallback := 1.0             # a slot the table does not name
 var errors: PackedStringArray = []
 ## Ground rules: slots whose own grass is off (only painted species and forced spots grow there). table_for writes their allowance negated.
@@ -63,6 +68,8 @@ func _load_text(text: String) -> void:
 	species_by_name.clear()
 	band_by_name.clear()
 	display_names.clear()
+	water_by_name.clear()
+	water_names.clear()
 	default_species = pack_default_mix()
 	errors.clear()
 	var doc = JSON.parse_string(text)
@@ -96,14 +103,68 @@ func _load_text(text: String) -> void:
 		if float(dens) < 0.0 or float(dens) > 1.0:
 			errors.append("%s: %s is outside 0..1" % [k, dens])
 		by_name[key] = clampf(float(dens), 0.0, 1.0)
+	var water = doc.get("water", {})
+	if typeof(water) != TYPE_DICTIONARY:
+		errors.append("water: want {kind: {density, species}}")
+	else:
+		for k in water:
+			_add_water(String(k), water[k], known)
 
 
+## Each species' layer by name (GrassTypes.LAYER_*): the names a mix may use, and where.
 static func _known_types() -> Dictionary:
 	var known := {}
-	for n in GrassTypes.new().names():
-		if n != "":
-			known[n] = true
+	for r in GrassTypes.new().rows:
+		if not r.is_empty():
+			known[String(r["name"])] = int(r.get("layer", GrassTypes.LAYER_GROUND))
 	return known
+
+
+## A water kind's entry: its density and its floating mix (surface species; none: it floats nothing).
+func _add_water(kind: String, v, known: Dictionary) -> void:
+	if typeof(v) != TYPE_DICTIONARY or typeof(v.get("density")) not in [TYPE_FLOAT, TYPE_INT]:
+		errors.append("water %s: want {density 0..1, species {name: weight}}" % kind)
+		return
+	if water_by_name.has(kind.to_lower()):
+		errors.append("water %s: named twice" % kind)
+		return
+	if water_names.size() == WATER_KINDS:
+		errors.append("water %s: more than %d water kinds" % [kind, WATER_KINDS])
+		return
+	var m := {}
+	if typeof(v.get("species")) == TYPE_DICTIONARY and not (v["species"] as Dictionary).is_empty():
+		m = _mix(v["species"], "water %s species" % kind, known, GrassTypes.LAYER_SURFACE)
+	water_by_name[kind.to_lower()] = {"density": clampf(float(v["density"]), 0.0, 1.0), "species": m}
+	water_names.append(kind)
+
+
+## A water kind's entry by name (any case); {density 0, species {}} for one the table lacks.
+func water_mix(kind: String) -> Dictionary:
+	return water_by_name.get(kind.to_lower(), {"density": 0.0, "species": {}})
+
+
+## Lower-case kind -> its index (GrassWater.pack).
+func water_index() -> Dictionary:
+	var out := {}
+	for i in water_names.size():
+		out[water_names[i].to_lower()] = i
+	return out
+
+
+## The compute's water table (grass_place_common.glsli WATER_BASE): per water kind, 3 vec4 of (type, cumulative
+## weight) pairs, then (density, 0, 0, 0); WATER_KINDS kinds, the unused with no pair and density 0.
+func water_bytes(types: GrassTypes) -> PackedByteArray:
+	var slot_of := {}
+	for i in GrassTypes.SLOTS:
+		var nm := str(types.rows[i].get("name", ""))
+		if nm != "":
+			slot_of[nm] = i
+	var f := PackedFloat32Array()
+	for i in WATER_KINDS:
+		var e := water_mix(water_names[i]) if i < water_names.size() else {"density": 0.0, "species": {}}
+		f.append_array(_pairs(e["species"], slot_of))
+		f.append_array([float(e["density"]), 0.0, 0.0, 0.0])
+	return f.to_byte_array()
 
 
 ## A growth table from a map's ground rules: each rule's surfaces get its density, its mix (normalised here;
@@ -121,6 +182,9 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 	g.painted_only_rest = not (r.default_grass and bool(r.everything_else.get("default_grass", true)))
 	for rule in r.rules:
 		var nm := String(rule.get("name", ""))
+		if bool(rule.get("water", false)):
+			g._add_water(nm, {"density": float(rule.get("density", 1.0)), "species": rule.get("species", {})}, known)
+			continue
 		var sp: Dictionary = rule.get("species", {})
 		var m := {} if sp.is_empty() else g._mix(sp, "%s species" % nm, known)
 		var bd: Dictionary = rule.get("band", {})
@@ -139,8 +203,9 @@ static func from_rules(r: GrassGroundRules) -> GrassTerrainGrowth:
 	return g
 
 
-## {type name: weight} normalised to sum 1, in the JSON's order; {} (and an error) when malformed.
-func _mix(m, what: String, known: Dictionary) -> Dictionary:
+## {type name: weight} normalised to sum 1, in the JSON's order; {} (and an error) when malformed or a species of the
+## other layer (`layer`: GrassTypes.LAYER_GROUND for a ground's mix, LAYER_SURFACE for a water kind's).
+func _mix(m, what: String, known: Dictionary, layer := GrassTypes.LAYER_GROUND) -> Dictionary:
 	if typeof(m) != TYPE_DICTIONARY or m.is_empty():
 		errors.append("%s: want {type name: weight}" % what)
 		return {}
@@ -151,6 +216,10 @@ func _mix(m, what: String, known: Dictionary) -> Dictionary:
 	for t in m:
 		if not known.has(str(t)):
 			errors.append("%s: no species named %s in the config's packs" % [what, t])
+			return {}
+		if int(known[str(t)]) != layer:
+			errors.append(("%s: %s floats on water (a surface species): give it to a water kind" if layer
+				== GrassTypes.LAYER_GROUND else "%s: %s is a ground species: it cannot float") % [what, t])
 			return {}
 		if (typeof(m[t]) != TYPE_FLOAT and typeof(m[t]) != TYPE_INT) or float(m[t]) <= 0.0:
 			errors.append("%s: %s's weight is not a positive number" % [what, t])

@@ -17,7 +17,9 @@ const PALETTE := ["#8bc34a", "#d4b36a", "#2e7d32", "#e91e63", "#607d8b", "#ffc10
 	"#ff7043", "#795548", "#3f51b5", "#cddc39"]
 
 var default_grass := true            # the master switch: false = every rule, Everything else too, painted only
-var rules: Array = []                # {name, colour, surfaces: Array[String], default_grass, density, species, band}
+var rules: Array = []                # {name, colour, surfaces: Array[String], default_grass, density, species, band}; a
+                                     # water kind has "water": true, no surfaces and no band: its species float on the
+                                     # sources whose water_kind is its name
 var everything_else := {"default_grass": true, "density": 1.0, "species": {}}
 var seasons := {}                    # species name -> {"mode": bloom | stage | date, "stage": 0..1, "day": 0..364}
 var map_date := -1.0                 # < 0: the clock (the game's day, the editor's preview date)
@@ -58,6 +60,11 @@ func _read(doc: Dictionary) -> void:
 			errors.append("a rule is not an object")
 			continue
 		var nm := String(o.get("name", "Rule %d" % (rules.size() + 1)))
+		if bool(o.get("water", false)):
+			rules.append({"name": nm, "colour": String(o.get("colour", PALETTE[rules.size() % PALETTE.size()])),
+				"water": true, "surfaces": [], "default_grass": true, "density": _density(o.get("density", 1.0), nm),
+				"species": _species(o.get("species", {}), nm, known, GrassTypes.LAYER_SURFACE), "band": {}})
+			continue
 		var surf: Array = []
 		for s in o.get("surfaces", []):
 			var key := String(s).to_lower()
@@ -99,9 +106,10 @@ func _density(v, what: String) -> float:
 	return clampf(float(v), 0.0, 1.0)
 
 
-## A mix as written ({species: weight}, the weights raw: GrassTerrainGrowth normalises them). Unknown species, weights
-## that are not positive numbers and species past the sixth are dropped, each an error. {} = Everything else's mix.
-func _species(m, what: String, known: Dictionary) -> Dictionary:
+## A mix as written ({species: weight}, the weights raw: GrassTerrainGrowth normalises them). Unknown species, species
+## of the other layer (`layer`: a water kind's are surface species), weights that are not positive numbers and species
+## past the sixth are dropped, each an error. {} = Everything else's mix.
+func _species(m, what: String, known: Dictionary, layer := GrassTypes.LAYER_GROUND) -> Dictionary:
 	var out := {}
 	if typeof(m) != TYPE_DICTIONARY:
 		errors.append("%s: the species are not {name: weight}" % what)
@@ -110,6 +118,9 @@ func _species(m, what: String, known: Dictionary) -> Dictionary:
 		var w = m[t]
 		if not known.has(String(t)):
 			errors.append("%s: no species named %s in the config's packs" % [what, t])
+		elif int(known[String(t)]) != layer:
+			errors.append(("%s: %s floats on water (a surface species): give it to a water kind" if layer
+				== GrassTypes.LAYER_GROUND else "%s: %s is a ground species: it cannot float") % [what, t])
 		elif typeof(w) not in [TYPE_INT, TYPE_FLOAT] or float(w) <= 0.0:
 			errors.append("%s: %s's weight is not a positive number" % [what, t])
 		elif out.size() >= MIX_MAX:
@@ -132,11 +143,12 @@ func _band(b, what: String, known: Dictionary) -> Dictionary:
 	return {"above_m": float(b["above_m"]), "species": sp}
 
 
+## Each species' layer by name (GrassTypes.LAYER_*).
 static func _known_species() -> Dictionary:
 	var known := {}
-	for n in GrassTypes.new().names():
-		if n != "":
-			known[n] = true
+	for r in GrassTypes.new().rows:
+		if not r.is_empty():
+			known[String(r["name"])] = int(r.get("layer", GrassTypes.LAYER_GROUND))
 	return known
 
 
@@ -180,6 +192,15 @@ static func from_growth_table(doc: Dictionary, surfaces: PackedStringArray) -> G
 		var n := (rule["surfaces"] as Array).size()
 		if n > 1:
 			rule["name"] = "%s +%d" % [rule["surfaces"][0], n - 1]
+	var water = doc.get("water", {})
+	for k in (water if typeof(water) == TYPE_DICTIONARY else {}):
+		var v = water[k]
+		if typeof(v) != TYPE_DICTIONARY:
+			continue
+		var i := r.add_water(String(k))
+		r.rules[i]["density"] = clampf(float(v.get("density", 1.0)), 0.0, 1.0)
+		if typeof(v.get("species")) == TYPE_DICTIONARY:
+			r.rules[i]["species"] = (v["species"] as Dictionary).duplicate(true)
 	return r
 
 
@@ -236,6 +257,8 @@ func to_text() -> String:
 
 
 static func _ordered(r: Dictionary) -> Dictionary:
+	if bool(r.get("water", false)):
+		return {"name": r["name"], "colour": r["colour"], "water": true, "density": r["density"], "species": r["species"]}
 	var o := {"name": r["name"], "colour": r["colour"], "surfaces": r["surfaces"], "default_grass": r["default_grass"],
 		"density": r["density"], "species": r["species"]}
 	var b: Dictionary = r.get("band", {})
@@ -293,6 +316,19 @@ func add_rule(nm: String) -> int:
 	return rules.size() - 1
 
 
+## A new water kind named `nm` (the name its sources carry in their water_kind metadata): density 1, no species; its
+## index.
+func add_water(nm: String) -> int:
+	rules.append({"name": nm, "colour": PALETTE[rules.size() % PALETTE.size()], "water": true, "surfaces": [],
+		"default_grass": true, "density": 1.0, "species": {}, "band": {}})
+	return rules.size() - 1
+
+
+## Whether rule i is a water kind.
+func is_water(i: int) -> bool:
+	return i >= 0 and i < rules.size() and bool(rules[i].get("water", false))
+
+
 ## A rule of its own for `surface`, with the settings of the rule it was in (nothing grows differently until it is
 ## edited), named after it; its index.
 func new_rule_from(surface: String) -> int:
@@ -334,7 +370,7 @@ func set_weight(i: int, species: String, weight: float, band := false) -> bool:
 	var r: Dictionary = rules[i] if i >= 0 else everything_else
 	var m: Dictionary
 	if band:
-		if (r.get("band", {}) as Dictionary).is_empty():
+		if bool(r.get("water", false)) or (r.get("band", {}) as Dictionary).is_empty():
 			return false
 		m = r["band"]["species"]
 	else:
@@ -352,6 +388,8 @@ func set_weight(i: int, species: String, weight: float, band := false) -> bool:
 ## defaults), or its height moved; a negative height removes it.
 func set_band(i: int, above_m: float) -> void:
 	var r: Dictionary = rules[i]
+	if bool(r.get("water", false)):
+		return                     # a water kind has no elevation band
 	if above_m < 0.0:
 		r["band"] = {}
 		return
