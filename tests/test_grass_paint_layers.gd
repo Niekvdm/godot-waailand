@@ -45,6 +45,7 @@ func test_the_library_follows_the_layer() -> void:
 	assert_eq(fired[0], 1, "the bar is told")
 	assert_true(_names(p).has("t lily") and _names(p).has("t duck") and not _names(p).has("pasture"),
 		"Water: surface species only")
+	assert_eq(p.library()["key"], "grass.species.water", "Water keeps its own favourites and recents")
 	p.set_layer(GrassPaintProvider.Layer.WATER)
 	assert_eq(fired[0], 1, "the same layer again: no news")
 
@@ -80,6 +81,9 @@ func test_maps_and_the_water_point() -> void:
 	assert_near(slant.x, 3.5, 1e-4, "where the ray meets it")
 	var dry := p.project_hit(Vector3(50, 11, 0), Vector3(0, -1, 0), Vector3(50, 0, 0))
 	assert_eq(dry, Vector3(50, 0, 0), "no water there: the hit")
+	assert_eq(p.cursor_note(), "no water here", "the Water layer off water: the brush chip's note")
+	p.project_hit(Vector3(0, 11, 0), Vector3(0, -1, 0), Vector3(0, -3, 0))
+	assert_eq(p.cursor_note(), "", "over water: none")
 	p.set_layer(GrassPaintProvider.Layer.GROUND)
 	assert_eq(p.project_hit(Vector3(0, 11, 0), Vector3(0, -1, 0), Vector3(0, -3, 0)), Vector3(0, -3, 0),
 		"Ground: the hit")
