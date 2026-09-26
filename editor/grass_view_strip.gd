@@ -60,6 +60,16 @@ func setup(p_provider: GrassPaintProvider, p_kit: Object, p_accent: Color) -> vo
 	every = p_kit.tool_button("view_every_ground", "Grow on every ground (the preview only)", p_accent)
 	every.toggled.connect(func(on: bool) -> void: _p.set_preview_all_grounds(on))
 	add_child(every)
+	for b in [eye, every]:                  # slim: the In bloom chip's height, a 14 px icon (the bar's tools are 30)
+		b.expand_icon = true
+		b.custom_minimum_size = Vector2(22.0, 22.0)
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		for st in ["normal", "hover", "pressed", "hover_pressed"]:
+			(b.get_theme_stylebox(st) as StyleBoxFlat).set_content_margin_all(4.0)
+		var off := StyleBoxEmpty.new()      # the theme's disabled box would pad it back up (a button's size is its largest)
+		off.set_content_margin_all(4.0)
+		b.add_theme_stylebox_override("disabled", off)
+	bloom.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	refresh()
 
 
