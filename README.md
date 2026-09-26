@@ -2,7 +2,7 @@
 
 GPU grass, flowers and seasons for [Terrain3D](https://github.com/TokisanGames/Terrain3D), for Godot 4.
 
-![Waailand in 74 seconds: a tulip field, the species packs, tulips, kochia and rice terraces through their seasons, painting with the Grass tools, previewing a date, the Ground rules and Species dialogs, floating and wet species, a gust across a hay field and a ball rolling through it](media/waailand.webp)
+![Waailand in 88 seconds: a tulip field, the species packs, tulips, kochia and rice terraces through their seasons, tulips planted on a fallow bulb bed with the Grass tools, a row colored yellow and the paint overlay, previewing a date, the Ground rules dialog and a species pinned in bloom, the Species dialog, floating and wet species, a gust across a hay field and a ball rolling through it](media/waailand.webp)
 
 | | | |
 |---|---|---|
@@ -189,7 +189,7 @@ under the cursor, and why. Species…
 and Ground rules… are behind the panel's ⋯. Each stroke is one undo step; the maps are saved with the scene, one image
 per region beside Terrain3D's region files.
 
-![The Grass workspace: tulips painted across a lawn with the Species tool, the library on the left, the tools and the brush below](media/painting.jpg)
+![The Grass workspace: three rows of tulips planted on a fallow bulb bed, the tool's settings on the left, the view strip above, the tools, the species chip and the brush below](media/painting.jpg)
 
 The panel's **Ground | Water** switch picks the layer the tools paint: Water shows the surface species in the
 library, paints the water maps (their own images, in `<maps_folder>_water`) and lands the stroke where the view ray
