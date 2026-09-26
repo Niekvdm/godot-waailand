@@ -140,6 +140,14 @@ void main() {
 		alive = false;
 		gh = CAM.y;
 	}
+	// The depth too, at the final root: a root pulled across a waterline or a water source's outline would grow a land
+	// type in the water, or a bed type on the bank.
+	if (alive) {
+		vec4 wf = water_top(pos);
+		if (type_eligibility(ty, wf.x > WATER_NONE ? wf.x - gh : -100.0, wf.z) <= 0.0) {
+			alive = false;
+		}
+	}
 	vec3 root = vec3(pos.x, gh - ROOT_SINK, pos.y);
 	vec3 gn = ground_n(pos);
 	if (gn.y < MAX_SLOPE_COS) {

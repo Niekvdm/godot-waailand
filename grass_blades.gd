@@ -22,7 +22,7 @@ const PLACE_SHADER := "res://addons/waailand/blade_place.glsl"
 ## The kernel that turns a frame's counts into the draw commands.
 const FINALIZE_SHADER := "res://addons/waailand/blade_finalize.glsl"
 ## The params buffer's size in vec4s (P.v in grass_place_common.glsli).
-const PARAM_VEC4 := 20
+const PARAM_VEC4 := 24
 ## Grid cells per side of one compute tile (one workgroup).
 const TILE_CELLS := 16
 ## Floats per blade instance in the MultiMesh buffers.
@@ -100,6 +100,8 @@ const DEFAULT_SWELL := {"dir": Vector2(0.0, 1.0), "height": 0.0, "k": 0.037, "om
 @export var species_patch_m := 3.0
 ## How fast the grass turns to a new wind direction (1/s; set_wind): slow, so a gust's veer does not flick it.
 @export var wind_veer_rate := 0.4
+## How far a plant floating on inland water bobs (m); the sea's swell moves those on the sea.
+@export var water_bob_m := 0.01
 # The sea level in metres (set_sea). NaN means no sea: every point is dry land and the sea species never grow.
 var _sea_level := NAN
 # The dominant swell, for the surge (grass_blade.gdshader): the direction it travels, crest-to-trough height (m),
@@ -220,7 +222,18 @@ var roads := GrassRoads.new()
 ## The live water sources (GrassWater): the species measure their depth below the highest surface over them, and the
 ## surface layer floats on them.
 var water := GrassWater.new()
+## Floating roots sit this far above their surface (m), clear of the water's own mesh.
+const SURFACE_LIFT_M := 0.01
 var _water_dirty := true
+var _water_origin := Vector2(INF, INF)
+var _water_rev := -2
+var _water_count := 0
+var _water_pack := {}              # the water pack last sent to the GPU (the query and water_surface read the same)
+var _water_index := {}             # lower-case water kind -> index (the growth table's water section)
+var _sea_kind := -1                # the sea's water kind (GrassWater.SEA_KIND), -1: none
+var _clock := 0.0                  # seconds, wrapped every hour: the floating plants' bob
+var _water_idx := RID()
+var _water_shapes := RID()
 var _road_origin := Vector2(INF, INF)
 var _road_count := 0
 var _road_dirty := true
@@ -533,6 +546,9 @@ func sample(p_position: Vector3) -> GrassSample:
 	_query.max_slope_cos = cos(deg_to_rad(max_slope_deg))
 	_query.road_pack = _road_pack
 	_query.road_origin = _road_origin
+	_query.water_pack = _water_pack
+	_query.water_origin = _water_origin
+	_query.sea_kind = _sea_kind
 	return _query.sample(p_position)
 
 
@@ -608,6 +624,9 @@ func refresh_growth() -> void:
 	_mix = growth.mix_bytes(assets, types)
 	_mix_f = _mix.to_float32_array()
 	_slot_mixes = growth.slot_mixes(assets, types)
+	_water_index = growth.water_index()
+	_sea_kind = int(_water_index.get(GrassWater.SEA_KIND.to_lower(), -1))
+	_water_dirty = true
 	_far_dirty = true
 	_types_up.mark()
 
@@ -691,6 +710,18 @@ func set_road_footprint(fp) -> void:
 func set_water(source) -> void:
 	water.source = source
 	_water_dirty = true
+
+
+## The highest water surface over `p` (a source's or the sea's), NAN where no water stands over the ground. It reads
+## the sources as the blades last sent them (the window around the camera).
+func water_surface(p: Vector3) -> float:
+	var on := not is_nan(_sea_level)
+	var wt := GrassWater.top(_water_pack, _water_origin, Vector2(p.x, p.z),
+		Vector3(_sea_level if on else 0.0, float(_sea_kind), 1.0 if on else 0.0))
+	if wt.x <= GrassWater.NONE or terrain == null or terrain.get("data") == null:
+		return NAN
+	var g := float(terrain.get("data").call("get_height", p))
+	return wt.x if not is_nan(g) and wt.x > g else NAN
 
 
 func _notification(what: int) -> void:
@@ -816,6 +847,7 @@ func _dispatch(dt: float) -> void:
 	if terrain == null:
 		return
 	var us0 := Time.get_ticks_usec() if debug_timing else 0
+	_clock = fmod(_clock + dt, 3600.0)
 	var c := view_of(cam).origin
 	interaction.frame_begin(c, dt)
 	var tsize := TILE_CELLS * grid_pitch
@@ -854,6 +886,16 @@ func _dispatch(dt: float) -> void:
 		_road_origin = wo
 		_road_count = int(pk["count"])
 		_road_dirty = false
+	var wwo := water.window_for(Vector2(c.x, c.z))
+	var wrev := water.revision()
+	if _water_dirty or wwo != _water_origin or wrev != _water_rev:
+		var wpk := water.pack(wwo, _water_index)
+		_water_pack = wpk
+		ground["water"] = wpk
+		_water_origin = wwo
+		_water_rev = wrev
+		_water_count = int(wpk["count"])
+		_water_dirty = false
 	var params := _params_bytes(cam)
 	var types_b := PackedByteArray()                        # empty: the GPU has the latest, no upload
 	var types_gen := _types_up.pending()
@@ -1034,6 +1076,21 @@ func _params_bytes(cam: Camera3D) -> PackedByteArray:
 	f[77] = species_patch_m
 	f[78] = 0.0 if is_nan(_sea_level) else _sea_level
 	f[79] = 0.0 if is_nan(_sea_level) else 1.0
+	f[80] = _water_origin.x if _water_count > 0 else 0.0
+	f[81] = _water_origin.y if _water_count > 0 else 0.0
+	f[82] = GrassWater.BIN_M
+	f[83] = float(GrassWater.BINS) if _water_count > 0 else 0.0
+	f[84] = float(_sea_kind)
+	f[85] = GrassTypes.SEA_SHORE_M
+	f[86] = _clock
+	f[87] = float(_swell["phase"])
+	var sd: Vector2 = _swell["dir"]
+	f[88] = sd.x
+	f[89] = sd.y
+	f[90] = float(_swell["height"])
+	f[91] = float(_swell["k"])
+	f[92] = water_bob_m
+	f[93] = SURFACE_LIFT_M
 	return f.to_byte_array()
 
 
@@ -1096,6 +1153,8 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 	_region_buf = rd.storage_buffer_create(REGION_MAP_BYTES)
 	_road_idx = rd.storage_buffer_create(GrassRoads.MAX_IDS * 4)
 	_road_shapes = rd.storage_buffer_create(GrassRoads.MAX_SHAPES * 3 * 16)
+	_water_idx = rd.storage_buffer_create(GrassWater.MAX_IDS * 4)
+	_water_shapes = rd.storage_buffer_create((GrassWater.MAX_POLYS + GrassWater.MAX_VERTS) * 16)
 	# allocate(use_indirect = true) THEN set_mesh: the order is load-bearing (godotengine/godot#116655).
 	var caps := [cap_hi, cap_lo, cap_shadow]
 	var meshes := [mesh_hi, mesh_lo, mesh_hi]
@@ -1133,7 +1192,8 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 ## Bindings 2 (heights), 3 (grass maps), 9 (region map): shared by the blade and decoration sets.
 func _ground_uniforms(h_rd: RID, g_rd: RID, rut_rd: RID, c_rd: RID) -> Array[RDUniform]:
 	var out: Array[RDUniform] = [_sampled(2, h_rd), _sampled(3, g_rd), _storage(9, _region_buf),
-		_storage(10, _road_idx), _storage(11, _road_shapes), _sampled(12, rut_rd), _sampled(13, c_rd)]
+		_storage(10, _road_idx), _storage(11, _road_shapes), _sampled(12, rut_rd), _sampled(13, c_rd),
+		_storage(15, _water_idx), _storage(16, _water_shapes)]
 	return out
 
 
@@ -1182,6 +1242,13 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 		rd.buffer_update(_road_idx, 0, ib.size(), ib)
 		if not sb.is_empty():
 			rd.buffer_update(_road_shapes, 0, sb.size(), sb)
+	if ground.has("water"):
+		var wk: Dictionary = ground["water"]
+		var wib: PackedByteArray = wk["idx"]
+		var wsb: PackedByteArray = wk["shapes"]
+		rd.buffer_update(_water_idx, 0, wib.size(), wib)
+		if not wsb.is_empty():
+			rd.buffer_update(_water_shapes, 0, wsb.size(), wsb)
 	if ground["h"] != _ground_rids[0] or ground["g"] != _ground_rids[1] or ground["rut"] != _ground_rids[2] \
 			or ground["c"] != _ground_rids[3] or not _place_set.is_valid():
 		if not _rt_bind_ground(rd, ground["h"], ground["g"], ground["rut"], ground["c"]):
@@ -1291,7 +1358,7 @@ func _rt_free() -> void:
 		if (us as RID).is_valid() and rd.uniform_set_is_valid(us):
 			rd.free_rid(us)
 	for r in [_place_pipe, _fin_pipe, _place_shader, _fin_shader, _params, _types_buf,
-			_counters, _stats_buf, _sampler, _region_buf, _road_idx, _road_shapes]:
+			_counters, _stats_buf, _sampler, _region_buf, _road_idx, _road_shapes, _water_idx, _water_shapes]:
 		if (r as RID).is_valid():
 			rd.free_rid(r)
 	interaction.rt_free(rd)

@@ -26,6 +26,9 @@ var spacing := 1.0
 var max_slope_cos := cos(deg_to_rad(55.0))
 var road_pack := {}                 # GrassRoads.pack()'s last result ({}: no roads)
 var road_origin := Vector2.ZERO
+var water_pack := {}                # GrassWater.pack()'s last result ({}: no water sources)
+var water_origin := Vector2.ZERO
+var sea_kind := -1                  # the sea's water kind index (GrassWater.SEA_KIND in the table), -1: none
 ## The ground at Terrain3D vertex v: its grass map texel, its control word, its height (NAN: no region), and whether
 ## its map is still loading.
 var texel: Callable = func(_v: Vector2i) -> Color: return GrassMaps.NEUTRAL
@@ -54,8 +57,9 @@ func sample(pos: Vector3) -> GrassSample:
 		hs.append(h)
 	var w: Array[float] = [(1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y]
 	var gh := lerpf(lerpf(hs[0], hs[1], f.x), lerpf(hs[2], hs[3], f.x), f.y)
-	var depth := sea_level - gh if not is_nan(sea_level) else -100.0
-	var shore := GrassTypes.SEA_SHORE_M
+	var wt := _water_top(p)
+	var depth := wt.x - gh if wt.x > GrassWater.NONE else -100.0
+	var shore := wt.z
 	var r := 0.0
 	var b := 0.0
 	var total := 0.0
@@ -126,6 +130,13 @@ func sample(pos: Vector3) -> GrassSample:
 	s.colour = GrassColour.at(tr, 0.5, 0.5, float(tr.get("accent", 0.0)))
 	_flower(s, ty, p)
 	return s
+
+
+## The highest water over p (GrassWater.top over the live pack, the sea's included).
+func _water_top(p: Vector2) -> Vector4:
+	var on := not is_nan(sea_level)
+	return GrassWater.top(water_pack, water_origin, p, Vector3(sea_level if on else 0.0, float(sea_kind),
+		1.0 if on else 0.0))
 
 
 ## A corner's allowance (corner_allow): 1 where forced or on the editor's every-ground preview; 1 at a painted override

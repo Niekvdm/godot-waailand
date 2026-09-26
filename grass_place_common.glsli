@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 // grass_place_common.glsli: shared by blade_place.glsl and deco_place.glsl.
 // The bindings both kernels share (0 params, 1 types, 2 Terrain3D heights, 3 the grass maps,
-// 8 interaction field, 9 region map), the params layout (mirrored by GrassBlades._params_bytes()), and the placement
+// 8 interaction field, 9 region map, 10-11 roads, 12 ruts, 13 control maps, 15-16 water sources), the params
+// layout (mirrored by GrassBlades._params_bytes()), and the placement
 // primitives, so blades and decorations cannot disagree about where a clump is or which
 // type grows where. Kernel-specific bindings (4-7) and push constants stay in each kernel.
 // Included, not imported: the .glsli extension keeps Godot's shader importer off it.
@@ -17,6 +18,8 @@ layout(set = 0, binding = 10, std430) restrict readonly buffer RoadIds { uint v[
 layout(set = 0, binding = 11, std430) restrict readonly buffer RoadShapes { vec4 v[]; } RSH;     // GrassRoads: shapes, vertices
 layout(set = 0, binding = 12) uniform sampler2D rut_map;              // set_ruts: R depression (m)
 layout(set = 0, binding = 13) uniform sampler2DArray control_maps;   // Terrain3D control words (R32F bits): what the terrain is painted with
+layout(set = 0, binding = 15, std430) restrict readonly buffer WaterIds { uint v[]; } WI;       // GrassWater: bin offsets, ids
+layout(set = 0, binding = 16, std430) restrict readonly buffer WaterShapes { vec4 v[]; } WSH;   // GrassWater: polygons, vertices
 
 // Params, mirrored by GrassBlades._params_bytes(): keep the two in step.
 #define CAM            P.v[0].xyz
@@ -62,6 +65,19 @@ layout(set = 0, binding = 13) uniform sampler2DArray control_maps;   // Terrain3
 #define RUT_SIZE       P.v[18].z
 #define RUT_FULL       P.v[18].w
 #define RUT_ON         (P.v[19].x > 0.5)
+#define WATER_ORIGIN   P.v[20].xy
+#define WATER_BIN_M    P.v[20].z
+#define WATER_BINS     int(P.v[20].w)      // 0: no water sources
+#define SEA_KIND       P.v[21].x           // the sea's water kind (-1: none)
+#define SEA_SHORE      P.v[21].y           // GrassTypes.SEA_SHORE_M
+#define TIME_S         P.v[21].z           // seconds, wrapped every hour (the floating plants' bob)
+#define SWELL_PHASE    P.v[21].w
+#define SWELL_DIR      P.v[22].xy
+#define SWELL_H        P.v[22].z           // crest to trough, m
+#define SWELL_K        P.v[22].w
+#define BOB_M          P.v[23].x           // inland water's bob (m)
+#define SURFACE_LIFT   P.v[23].y           // floating roots sit this far above the surface (m)
+#define WATER_NONE     -1e9
 #define TYPE_STRIPES   128                 // T.v[128 + type]: bed_m, path_m, stripe angle deg (GrassTypes.SLOTS 32)
 #define FALLBACK_TYPE  int(P.v[10].z)     // GrassTypes.fallback_slot: a stray index, a forced texel the mix can't grow, a road's verge
 
@@ -274,6 +290,43 @@ float ground_allowance(vec2 pos) {
 	return dot(a, vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y));
 }
 
+// GrassWater.top, mirrored: the highest water surface over p, the sea's included. x its height (WATER_NONE: no water),
+// y its kind (-1: a kind with no entry), z its shore (m), w 1 on the sea.
+vec4 water_top(vec2 p) {
+	vec4 best = SEA_ON ? vec4(SEA_LEVEL, SEA_KIND, SEA_SHORE, 1.0) : vec4(WATER_NONE, -1.0, 0.0, 0.0);
+	if (WATER_BINS <= 0) {
+		return best;
+	}
+	ivec2 b = ivec2(floor((p - WATER_ORIGIN) / WATER_BIN_M));
+	if (any(lessThan(b, ivec2(0))) || any(greaterThanEqual(b, ivec2(WATER_BINS)))) {
+		return best;
+	}
+	uint bi = uint(b.y * WATER_BINS + b.x);
+	uint base = uint(WATER_BINS * WATER_BINS + 1);
+	for (uint k = WI.v[bi]; k < WI.v[bi + 1u]; k++) {
+		vec4 h = WSH.v[WI.v[base + k]];          // (first vertex, count, surface height, kind)
+		if (h.z <= best.x) {
+			continue;
+		}
+		uint v0 = uint(h.x + 0.5);
+		uint n = uint(h.y + 0.5);
+		bool inside = false;
+		uint j = n - 1u;
+		for (uint i = 0u; i < n; i++) {
+			vec2 vi = WSH.v[v0 + i].xy;
+			vec2 vj = WSH.v[v0 + j].xy;
+			if ((vi.y > p.y) != (vj.y > p.y) && p.x < (vj.x - vi.x) * (p.y - vi.y) / (vj.y - vi.y) + vi.x) {
+				inside = !inside;
+			}
+			j = i;
+		}
+		if (inside) {
+			best = vec4(h.z, h.w, 0.0, 0.0);
+		}
+	}
+	return best;
+}
+
 // The grass map at pos (GrassMapCodec: R density multiplier x 128, G species override + 1, B height
 // scale) over the ground table. pl.r = bilinear allowance (1 at a painted override where the ground
 // allows any grass) x bilinear R/128 (may exceed 1), pl.b the height scale; ty: one corner picked by
@@ -302,11 +355,13 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 		a[i] = corner_allow(cw[i], c[i]);
 		hs[i] = texelFetch(height_maps, t, 0).r;
 	}
-	// The ground height here (ground_h's bilinear, on the texels already fetched) and the depth below the
-	// sea: the species know their depth.
+	// The ground height here (ground_h's bilinear, on the texels already fetched) and the depth below the highest
+	// water over it (the sea or a water source): the species know their depth; land keeps its margin to the sea's
+	// shore, and reaches an inland waterline.
 	float gh = mix(mix(hs[0], hs[1], f.x), mix(hs[2], hs[3], f.x), f.y);
-	float depth = SEA_ON ? SEA_LEVEL - gh : -100.0;     // no sea: dry land (not the land range's own -1e4 edge)
-	float shore = SEA_SHORE_M;
+	vec4 wt = water_top(pos);
+	float depth = wt.x > WATER_NONE ? wt.x - gh : -100.0;     // no water: dry land (not the land range's own -1e4 edge)
+	float shore = wt.z;
 	vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
 	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
 	vec4 wa = w * vec4(a[0], a[1], a[2], a[3]);
