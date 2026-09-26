@@ -23,7 +23,8 @@ float hand_keep(vec4 host, vec4 curve, float d) {
 }
 
 // The flower colour missing at distance d over type ty at xz: rgb, and how much (0..1).
-vec4 hand_tint(int ty, vec2 xz, float d) {
+// `pcol`: the blade's painted flower color (palette entry + 1; 0: the field's own stripes, as the flower picks).
+vec4 hand_tint(int ty, vec2 xz, float d, float pcol) {
 	vec3 rgb = vec3(0.0);
 	float a = 0.0;
 	for (int s = 0; s < 2; s++) {
@@ -34,7 +35,7 @@ vec4 hand_tint(int ty, vec2 xz, float d) {
 		int k = int(host.x);
 		vec4 curve = hand_curve[k];
 		float miss = host.y * (1.0 - hand_keep(host, curve, d));
-		float pi = palette_index(xz, curve.zw, hand_n[k], hand_salt[k]);
+		float pi = pcol > 0.5 ? mod(pcol - 1.0, hand_n[k]) : palette_index(xz, curve.zw, hand_n[k], hand_salt[k]);
 		rgb += hand_pal[k * 6 + int(pi)] * miss;
 		a += miss;
 	}

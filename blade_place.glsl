@@ -107,6 +107,7 @@ void main() {
 	vec4 wt = vec4(WATER_NONE);
 	bool surface = pc.layer == 1;
 	bool alive = surface ? surface_at(pos, hd.x, pl, ty, wt) : place_at(pos, hd.x, pl, ty);
+	int pcol = (PLACE_COLOR >= 1 && PLACE_COLOR <= 126) ? PLACE_COLOR : 0;   // the painted flower color (0: Auto)
 	float dens = pl.r;
 	if (dens <= 0.0) {
 		alive = false;
@@ -230,8 +231,8 @@ void main() {
 	vec4 r1 = vec4(0.0, 1.0, 0.0, root.y);
 	vec4 r2 = vec4(S.z, 0.0, F.z, root.z);
 	vec4 col = vec4(
-		pack2(hk.z, cdist),
-		pack2(cf / TAU, fract(away_ang / TAU)),
+		pack2(hk.z, cdist) + float(pcol & 15) * 1048576.0,          // + the painted color's low 4 bits
+		pack2(cf / TAU, fract(away_ang / TAU)) + float(pcol >> 4) * 1048576.0,   // + its high 3 bits
 		pack2(lay.x * 0.5 + 0.5, lay.y * 0.5 + 0.5),
 		pack2(iv.b, iv.a));
 	// CUSTOM.z: (type & 15) x 2^20 + pack2(morph, seed); CUSTOM.w: (type >> 4) x 2^20 + pack2(ground

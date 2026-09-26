@@ -3,7 +3,8 @@
 shader_type spatial;
 // The grass blade. Every blade is built HERE from its instance:
 //   transform  root + side axis S (X) + facing F (Z), up = Y
-//   COLOR      pack2(clump hash, clump dist), pack2(clump facing, away angle),
+//   COLOR      pack2(clump hash, clump dist) + (painted color & 15) x 2^20, pack2(clump facing, away angle) +
+//              (painted color >> 4) x 2^20 (the flower color the handoff tints with; 0: the field's stripes),
 //              pack2(lay dir), pack2(crush, push)          (pack2: exact integers, see blade_place.glsl)
 //   CUSTOM     height, width (both already x sqrt(grow)), type x 2^20 + pack2(morph, seed),
 //              pack2(ground n.xz)
@@ -170,8 +171,11 @@ void vertex() {
 	float seed = ms.y;
 	vec2 nxz = unpack2(INSTANCE_CUSTOM.w - ty_hi * 1048576.0) * 2.0 - 1.0;
 	vec3 gn = vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.0)), nxz.y);
-	vec2 ud = unpack2(COLOR.x);
-	vec2 fa = unpack2(COLOR.y) * TAU;
+	float pc_lo = floor(COLOR.x / 1048576.0);
+	float pc_hi = floor(COLOR.y / 1048576.0);
+	float pcol = pc_lo + pc_hi * 16.0;          // the painted flower color's palette entry + 1 (0: Auto)
+	vec2 ud = unpack2(COLOR.x - pc_lo * 1048576.0);
+	vec2 fa = unpack2(COLOR.y - pc_hi * 1048576.0) * TAU;
 	vec2 lay = unpack2(COLOR.z) * 2.0 - 1.0;
 	vec2 cp = unpack2(COLOR.w);
 	float crush = cp.x;
@@ -266,7 +270,7 @@ void vertex() {
 	vec3 V = normalize(cam - pos);
 	float dist = length(cam - root);
 	// The flower colour this type's decorations no longer draw here, per blade (grass_handoff.gdshaderinc).
-	v_tint = hand_tint(ty, root.xz, dist);
+	v_tint = hand_tint(ty, root.xz, dist, pcol);
 	v_tint.a *= hand_gain;
 	float w_proj = w_here * sqrt(max(1.0 - dot(S, V) * dot(S, V), 0.0));
 	float min_w = min_px * dist / px_per_m * (w_here / max(W, 1e-5));
