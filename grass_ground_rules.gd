@@ -150,8 +150,8 @@ static func _known_species() -> Dictionary:
 
 
 ## Rules from the shared growth table (its parsed JSON, the weights as written) for a map's surfaces: surfaces with
-## the same allowance, species and band (written in the same order, which is their pick order) share a
-## rule, named after the first ("Pasture +2" for three); a surface the table does not list stays in Everything else,
+## the same allowance, species, band and painted_only (its own grass off) (written in the same order, which is their
+## pick order) share a rule, named after the first ("Pasture +2" for three); a surface the table does not list stays in Everything else,
 ## which takes the table's default and default_species. GrassTerrainGrowth.from_rules then gives the table's own tables
 ## for these surfaces: the grass is unchanged.
 static func from_growth_table(doc: Dictionary, surfaces: PackedStringArray) -> GrassGroundRules:
@@ -171,6 +171,7 @@ static func from_growth_table(doc: Dictionary, surfaces: PackedStringArray) -> G
 		var dens := float(v.get("density", 0.0)) if typeof(v) == TYPE_DICTIONARY else float(v)
 		var sp: Dictionary = {}
 		var band := {}
+		var own := not (typeof(v) == TYPE_DICTIONARY and bool(v.get("painted_only", false)))   # painted only: off
 		if typeof(v) == TYPE_DICTIONARY:
 			if typeof(v.get("species")) == TYPE_DICTIONARY:
 				sp = (v["species"] as Dictionary).duplicate(true)
@@ -178,13 +179,13 @@ static func from_growth_table(doc: Dictionary, surfaces: PackedStringArray) -> G
 			if typeof(bands) == TYPE_ARRAY and (bands as Array).size() == 1 and typeof(bands[0]) == TYPE_DICTIONARY:
 				band = {"above_m": float(bands[0].get("above_m", 0.0)),
 					"species": (bands[0].get("species", {}) as Dictionary).duplicate(true)}
-		var sig := JSON.stringify([dens, sp, band], "", false)
+		var sig := JSON.stringify([dens, sp, band, own], "", false)
 		if group.has(sig):
 			(r.rules[group[sig]]["surfaces"] as Array).append(s)
 		else:
 			group[sig] = r.rules.size()
 			r.rules.append({"name": s, "colour": PALETTE[r.rules.size() % PALETTE.size()], "surfaces": [s],
-				"default_grass": true, "density": clampf(dens, 0.0, 1.0), "species": sp, "band": band})
+				"default_grass": own, "density": clampf(dens, 0.0, 1.0), "species": sp, "band": band})
 	for rule in r.rules:
 		var n := (rule["surfaces"] as Array).size()
 		if n > 1:

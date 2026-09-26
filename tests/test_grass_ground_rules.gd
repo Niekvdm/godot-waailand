@@ -170,6 +170,11 @@ func test_the_growth_table_painted_only() -> void:
 		"its allowance negated (%s)" % [t.slice(0, 3)])
 	g._load_text(JSON.stringify({"slots": {"Lawn": 1.0}}))
 	assert_true(g.painted_only.is_empty(), "a reload forgets it")
+	var r := GrassGroundRules.from_growth_table({"slots": {"Fallow": {"density": 0.8, "painted_only": true},
+		"Bed": {"density": 0.8}}}, PackedStringArray(["Fallow", "Bed"]))
+	assert_eq(r.rules.map(func(x): return [x["surfaces"], x["default_grass"]]), [[["Fallow"], false], [["Bed"], true]],
+		"Start from defaults keeps it: its own rule, its own grass off (not grouped with a same-density bed)")
+	assert_true(GrassTerrainGrowth.from_rules(r).painted_only.has("fallow"), "and the rules grow the same")
 
 
 func _assets(names: Array) -> Resource:
