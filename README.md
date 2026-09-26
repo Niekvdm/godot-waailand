@@ -136,8 +136,16 @@ mix above an elevation). Repainting the terrain moves the grass with it.
 
 A map can have its own **ground rules**, edited in the **Ground rules** dialog (the Grass workspace's panel, "Ground
 rules…"): rules that group surfaces and give each group its own grass on or off, density, species mix and elevation
-band; per-species season settings; and the map's date. They are saved per map scene as
-`<grounds_dir>/<scene name>.json`.
+band; the water kinds and what floats on each; per-species season settings; and the map's date. They are saved per
+map scene as `<grounds_dir>/<scene name>.json`.
+
+What floats on water goes in the growth table's `water` section, by the kind of water (the name its water sources
+carry; the sea's is `Zee`): a density and a mix of surface species. A kind with no entry floats nothing.
+
+```json
+{"slots": {"Pond bed": {"density": 1.0, "species": {"pond_weed": 1.0}}},
+ "water": {"Vijver": {"density": 0.4, "species": {"water_lily": 0.6, "lotus": 0.4}}}}
+```
 
 ## Painting
 
@@ -148,6 +156,11 @@ inverts a tool. The panel holds the species library with pictures and hover card
 region fill, and the preview's date. Each stroke is one undo step; the maps are saved with the scene, one image per
 region beside Terrain3D's region files.
 
+The panel's **Ground / Water** switch picks the layer the tools paint: Water shows the surface species in the
+library, paints the water maps (their own images, in `<maps_folder>_water`) and lands the stroke where the view ray
+meets the water surface (with Terrain3D Extended 1.1; with 1.0 the stroke lands on the bed under the water). Over
+ground with no water the Water layer paints nothing, and the panel says so.
+
 The 3D toolbar's **Grass** menu shows or hides the preview, grows it on every ground (to see what a species would
 look like anywhere), and sets the date the preview shows.
 
@@ -157,7 +170,8 @@ A game gives the grass its inputs through the `GrassBlades` node.
 
 - State (a later call replaces an earlier one): `set_wind(direction, speed_m_s, instant := false)`,
   `set_date(day_of_year)`, `set_weather(wetness, snow)`, `set_sun(direction)`, `set_sea(level, swell)`,
-  `set_ruts(texture, origin, size_m, full_depth)`, `set_road_footprint(footprint)`, `apply_quality(tier)`.
+  `set_ruts(texture, origin, size_m, full_depth)`, `set_road_footprint(footprint)`, `set_water(source)`,
+  `apply_quality(tier)`.
 - Events (they add up within a frame and clear with it): `add_crush(from, to, radius, strength, direction)` (a tyre
   lays the grass down), `add_push(from, to, radius, strength, direction)` (a body bends it away),
   `add_wash(position, radius, intensity)` (a rotor's downwash; the frame's two strongest count).
@@ -179,15 +193,17 @@ func _feed(_dt: float) -> void:
 ```
 
 Put a feeder under the `GrassBlades` in your scene, or list its script in the config's `runtime_inputs` (the game) or
-`editor_inputs` (the game and the editor preview; such a script needs `@tool`). `GrassGroupStamper`
-(`feeders/grass_group_stamper.gd`) is ready-made: every node in a group pushes (or crushes) the grass along its trail
-while it is near the ground. Code that is not a feeder finds the grass with `GrassBlades.active()`.
+`editor_inputs` (the game and the editor preview; such a script needs `@tool`). Two are ready-made:
+`GrassGroupStamper` (`feeders/grass_group_stamper.gd`): every node in a group pushes (or crushes) the grass along its
+trail while it is near the ground; `GrassWaterGroup` (`feeders/grass_water_group.gd`): every visible node in the group
+`waailand_water` is water (below). Code that is not a feeder finds the grass with `GrassBlades.active()`.
 
 ## Reading the grass
 
 `GrassBlades.active().sample(position)` says what grows at a point on the ground, as the GPU decides it there: a
 `GrassSample` with `species`, `density`, `height_m`, `colour`, `flower`, `flower_colour`, `forced`, `on_road` and
-`pending`. Call it when something happens (a footstep, a slipping wheel), not every frame for every object. In the
+`pending`. `sample_water(position)` says what floats there (the surface layer): the same fields and `surface_m`, the
+water's height. Call them when something happens (a footstep, a slipping wheel), not every frame for every object. In the
 game the grass keeps a small cache of region maps for it, read on a worker thread; a point in a region still loading
 reads as unpainted and says `pending`.
 
@@ -196,7 +212,20 @@ reads as unpainted and says `pending`.
 - **Seasons.** `set_date(day)` (0 is 1 January) moves every species through its year: accent colours, heights,
   flowers in bud, bloom and seed. The ground rules can pin a species to a stage or a date.
 - **The sea.** `set_sea(level, swell)`: species with a depth range grow below the sea (seagrass, corals), land
-  species stop at the waterline, and under water the swell's surge moves the plants instead of the wind.
+  species stop 0.3 m above it (its shore), and under water the swell's surge moves the plants instead of the wind.
+- **Water.** `set_water(source)` takes any object with `is_empty() -> bool` and `snapshot(origin: Vector2, window:
+  float, pad: float) -> {polys: Array[PackedVector2Array], heights: PackedFloat32Array, kinds: PackedStringArray}`
+  (an outline, a surface height and a kind per water body), and optionally `revision() -> int`, which moves when its
+  water changes. `GrassWaterGroup` is one: a `MeshInstance3D` with a `PlaneMesh` or `QuadMesh` gives its rectangle, a
+  `Path3D` its polygon, the node's height is the surface and its `water_kind` metadata the kind (else `Water`); hiding
+  a node (a paddy drained after the harvest) takes its water away, live. Depth is then below the highest water over a
+  point (a pond's or the sea's): species with a depth range grow on the bed of any water, land species reach an inland
+  waterline and stop there, and a species' `wet_depth_m` lets it stand in shallow water (rice 0.3, reed 0.5).
+- **Floating plants.** A species whose `layer` is `SURFACE` floats: a second grid of plants over the water only, its
+  species from the water kind's mix (the growth table's `water` section) or the water maps, rooted at the surface and
+  bobbing (the swell on the sea, a slow bob elsewhere: `water_bob_m`). Its blades can lie on the water (duckweed) and
+  its decorations float (pads) or stand on short stalks (flowers); they do not bend at the root. The far field is the
+  ground's: floating plants end at their draw distance, like the water under them. Up to 16 water kinds.
 - **Roads.** `set_road_footprint(footprint)` takes any object with `is_empty() -> bool` and
   `snapshot(origin: Vector2, window: float, pad: float) -> {segs: PackedFloat32Array, polys: Array}` (segments of
   `GrassRoads.SEG_STRIDE` floats: ax, az, bx, bz, half width, flags; polygons as `PackedVector2Array` rings). The road

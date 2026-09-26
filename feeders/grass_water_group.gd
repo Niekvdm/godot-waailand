@@ -10,7 +10,9 @@ extends GrassFeeder
 ## on it. It looks at the group every frame and moves its revision when anything changed, so the blades snapshot
 ## again. List it in the config's editor_inputs and it serves the editor preview too.
 
+## The group whose visible nodes are water, unless `group` names another.
 const GROUP := &"waailand_water"
+## The kind of a source without `water_kind` metadata.
 const DEFAULT_KIND := "Water"
 ## At most this many points of a path's curve (the kernels walk every vertex of a polygon they test).
 const MAX_PATH_POINTS := 64
@@ -31,14 +33,17 @@ func _feed(_dt: float) -> void:
 		_rev += 1
 
 
+## Moves whenever a source appears, goes, moves, changes its size, height or kind (GrassWater's optional revision).
 func revision() -> int:
 	return _rev
 
 
+## No visible source in the group.
 func is_empty() -> bool:
 	return _nodes().is_empty()
 
 
+## The sources whose outline reaches the window (GrassWater's snapshot): outlines, heights, kinds.
 func snapshot(origin: Vector2, window: float, pad: float) -> Dictionary:
 	var polys: Array[PackedVector2Array] = []
 	var heights := PackedFloat32Array()

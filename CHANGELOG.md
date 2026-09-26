@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 (2026-09-26)
+
+- Water sources: `GrassBlades.set_water(source)` (duck-typed, like the roads: outlines, surface heights, kinds) and a
+  ready-made feeder, `GrassWaterGroup` (the visible planes and paths in the group `waailand_water`). The species
+  measure their depth below the highest water over them, the sea's or a source's, judged at each blade's final root.
+- `GrassSpecies.wet_depth_m`: an emergent species stands in water that deep (rice, reed). Land species reach an inland
+  waterline; at the sea they keep their 0.3 m (the sea's shore), as before.
+- The surface layer: `GrassSpecies.layer` (`GROUND`, `SURFACE`). Surface species float on water in a second grid, from
+  the growth table's new `water` section (a mix per water kind; the sea's is `Zee`) or their own grass maps
+  (`<maps_folder>_water`); rooted at the surface, bobbing, their decorations without a root hinge.
+  `GrassBlades.sample_water(position)`, `GrassSample.surface_m`.
+- The Grass workspace: a Ground / Water switch (the library, the selection, the maps and the tools follow it; with
+  Terrain3D Extended 1.1 the stroke lands on the water's surface). The Ground rules dialog edits water kinds.
+- Pictures of surface species float on a pool.
+- Mixes are checked for the layer of their species (a floating species in a ground's mix, or a ground species in a
+  water kind's, is refused with an error).
+
 ## 1.2.0 (2026-09-25)
 
 - `GrassSpecies.picture_day`: the day of the year a species' library picture is drawn on (a species whose look is a

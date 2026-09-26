@@ -20,21 +20,30 @@ extends RefCounted
 ##   shapes vec4[]: one per polygon (first vertex, vertex count, surface height, kind index; -1: a kind the table
 ##                  has no entry for), then the vertices, one vec4 (x, z, 0, 0) each
 
+## The window around the camera the sources are snapshot in (m).
 const WINDOW_M := 320.0
+## A bin's side (m).
 const BIN_M := 8.0
+## Bins a window side.
 const BINS := 40
+## The window moves in steps this long (m).
 const SNAP_M := 32.0
+## Polygons the buffers hold (a window's); more and the water is dropped, with an error.
 const MAX_POLYS := 1024
+## Polygon vertices the buffers hold.
 const MAX_VERTS := 16384
+## Bin offsets and ids the buffers hold.
 const MAX_IDS := 32768
 ## No water: the height top() and the kernels' water_top give where none is.
 const NONE := -1e9
 ## The sea's kind (set_sea): the growth table's water entry for the sea goes by this name.
 const SEA_KIND := "Zee"
 
-var source = null          # duck-typed, see the header
+## The water source (duck-typed, see the header); null: none.
+var source = null
 
 
+## The window's corner for a camera at `cam_xz`.
 func window_for(cam_xz: Vector2) -> Vector2:
 	var c := (cam_xz / SNAP_M).floor() * SNAP_M
 	return c - Vector2.ONE * (WINDOW_M * 0.5)
