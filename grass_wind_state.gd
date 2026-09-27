@@ -53,12 +53,15 @@ var ripple_phase := 0.0
 
 
 ## How the grass answers a wind of `speed_m_s`: at a 4 m/s breeze exactly the defaults; lean and gust scale with
-## the speed (x0.3 to x1.8), the sway with its square root; below CALM_M_S it idles.
+## the speed (x0.3 to x1.8 when blowing), the sway with its square root. Zero wind means ZERO
+## movement — still air, still grass (2026-09-27: the old 0.3 floor kept the field dancing in
+## still air, which read as a bug). CALM_M_S remains the scroll/idle floor for winds above it.
 static func for_speed(speed_m_s: float) -> Dictionary:
-	var speed := maxf(speed_m_s, CALM_M_S)
-	var k := clampf(speed / 4.0, 0.3, 1.8)
+	var k := clampf(speed_m_s / 4.0, 0.0, 1.8)
+	var speed := maxf(speed_m_s, 0.0)
 	return {"speed": speed, "lean_base": 0.30 * k, "lean_gust": 0.60 * k,
-		"sway_amp": 0.10 * clampf(sqrt(speed / 4.0), 0.5, 1.4)}
+		"sway_amp": 0.10 * clampf(sqrt(k), 0.0, 1.4),
+		"comb": 0.90 * clampf(k * 1.5, 0.0, 1.0)}
 
 
 ## The direction the wind blows toward when it has none (a calm).

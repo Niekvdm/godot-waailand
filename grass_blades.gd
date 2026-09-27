@@ -543,6 +543,7 @@ func set_wind(direction: Vector2, speed_m_s: float, instant := false) -> void:
 	wind.lean_base = p["lean_base"]
 	wind.lean_gust = p["lean_gust"]
 	wind.sway_amp = p["sway_amp"]
+	wind.comb = p["comb"]
 	_wind_target = direction.normalized() if direction.length_squared() > 0.0 else GrassWindState.default_dir()
 	_wind_follow = true
 	if instant:
