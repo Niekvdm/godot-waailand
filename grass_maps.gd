@@ -30,6 +30,8 @@ var _pending := {}                 # location -> [task id, [Image]]: a streamed 
 var _q_images := {}                # location -> Image, or null (no file: NEUTRAL): the queries' own maps
 var _q_order: Array[Vector2i] = [] # _q_images' keys, least recently used first
 var _q_pending := {}               # location -> [task id, [Image]]: a query's map, loading on a worker thread
+var _waited := {}                  # task id -> true: already waited (a second wait is "Invalid Task ID" spam)
+var _lost_tasks := 0               # adds the pool refused (tid < 0) or ids that died un-waited
 var _dirty := {}                   # location -> true: changed since the last save
 var _removed := {}                 # location -> true: a region removed in the editor: its file goes on the save
 var scene_path := ""               # the scene its GrassBlades is saved in (the quit prompt asks per scene)
@@ -280,9 +282,8 @@ func _query_image(loc: Vector2i) -> Image:
 		return _q_images[loc]
 	if _q_pending.has(loc):
 		var job: Array = _q_pending[loc]
-		if not WorkerThreadPool.is_task_completed(job[0]):
+		if not _done(job[0]):
 			return null
-		WorkerThreadPool.wait_for_task_completion(job[0])
 		_q_pending.erase(loc)
 		var got: Image = job[1][0]
 		_q_keep(loc, _checked(got, loc) if got != null else null)
@@ -293,8 +294,34 @@ func _query_image(loc: Vector2i) -> Image:
 		return null
 	var box := [null]
 	var tid := WorkerThreadPool.add_task(func() -> void: box[0] = GrassMaps._read_path(path))
+	if tid < 0:
+		_lost_task("add_task refused a query read for %s; reading it synchronously" % str(loc))
+		_q_keep(loc, _checked(_read_path(path), loc))
+		return _q_images[loc]
 	_q_pending[loc] = [tid, box]
 	return null
+
+
+## A task finished AND its id is still waitable. `is_task_completed` cannot distinguish
+## a completed task from a dead id (a wait on the latter prints the C++ "Invalid Task
+## ID" error), so waits are funneled here: the first wait lands, repeats are skipped,
+## and an id that dies un-waited is counted and reported once.
+func _done(tid: int) -> bool:
+	if _waited.has(tid):
+		return false
+	if not WorkerThreadPool.is_task_completed(tid):
+		return false
+	WorkerThreadPool.wait_for_task_completion(tid)
+	_waited[tid] = true
+	if _waited.size() > 4096:
+		_waited.clear()      # generation wrap; old ids cannot come back before this
+	return true
+
+
+func _lost_task(what: String) -> void:
+	_lost_tasks += 1
+	if _lost_tasks == 1 or _lost_tasks % 100 == 0:
+		push_error("[GrassMaps] worker task lost (%d so far): %s" % [_lost_tasks, what])
 
 
 func _q_keep(loc: Vector2i, img: Image) -> void:
@@ -309,9 +336,8 @@ func _q_keep(loc: Vector2i, img: Image) -> void:
 func poll() -> void:
 	for loc in _pending.keys():
 		var tid: int = _pending[loc][0]
-		if not WorkerThreadPool.is_task_completed(tid):
+		if not _done(tid):
 			continue
-		WorkerThreadPool.wait_for_task_completion(tid)
 		var img: Image = _pending[loc][1][0]
 		_pending.erase(loc)
 		var i := layer_of(loc)
@@ -341,9 +367,11 @@ func _start_load(p_loc: Vector2i) -> void:
 func _notification(p_what: int) -> void:
 	if p_what == NOTIFICATION_PREDELETE:
 		for p in _pending.values():
-			WorkerThreadPool.wait_for_task_completion(p[0])
+			if not _waited.has(p[0]):
+				WorkerThreadPool.wait_for_task_completion(p[0])
 		for p in _q_pending.values():
-			WorkerThreadPool.wait_for_task_completion(p[0])
+			if not _waited.has(p[0]):
+				WorkerThreadPool.wait_for_task_completion(p[0])
 
 
 func _image_or_neutral(p_loc) -> Image:
@@ -368,6 +396,11 @@ func _load_all(p_want: Array) -> void:
 	var out: Array = []
 	out.resize(locs.size())
 	var tid := WorkerThreadPool.add_group_task(func(i: int) -> void: out[i] = GrassMaps._read_path(paths[i]), locs.size())
+	if tid < 0:
+		_lost_task("add_group_task refused the bulk load (%d regions); reading them synchronously" % locs.size())
+		for i in locs.size():
+			_images[locs[i]] = _checked(_read_path(paths[i]), locs[i])
+		return
 	WorkerThreadPool.wait_for_group_task_completion(tid)
 	for i in locs.size():
 		_images[locs[i]] = _checked(out[i], locs[i])
