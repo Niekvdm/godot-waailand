@@ -825,9 +825,35 @@ func _process(dt: float) -> void:
 	if _editor:
 		_preview_tick()
 	_far_tick()
+	_drop_check()
 	if frozen or not _live or not grass_visible:
 		return
 	_dispatch(dt)
+
+
+## Saturation made VISIBLE: when a bin overflows, the place kernel drops whole tiles — the
+## blades vanish in bands that move with the camera's facing (scan order decides who loses),
+## which reads exactly like a culling bug. stats[3] is the drop bitmask; warn once per bin.
+var _drop_warned := 0
+var _drop_poll := 0
+
+
+func _drop_check() -> void:
+	_drop_poll += 1
+	if _drop_poll % 120 != 0:
+		return
+	poll_stats()
+	var bits := int(stats[3]) if stats.size() >= 4 else 0
+	for bin in 3:
+		var mask := 1 << bin
+		if bits & mask and not _drop_warned & mask:
+			_drop_warned |= mask
+			var nm: String = ["HIGH", "LOW", "SHADOW"][bin]
+			var count := int(stats[bin]) if stats.size() > bin else -1
+			push_warning("GrassBlades: the %s bin saturated at %d blades and DROPPED the overflow — "
+					% [nm, count]
+					+ "grass vanishes in bands that follow the camera's facing. "
+					+ "Raise the tier's cap_%s (or shrink radius/far)." % nm.to_lower())
 
 
 ## Editor mode: the preview's date, visibility and paint overlay (GrassEditorPreview, set by the plugin's menu and the
