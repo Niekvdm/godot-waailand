@@ -247,6 +247,16 @@ var _was_broken := false
 ## Debug: print a marker per dispatched frame, to correlate the renderer's C++ error
 ## bursts with GrassBlades' compute list (or prove they belong to someone else).
 @export var debug_dispatch_marker := false
+## Wake DirectionalLight3D CONTACT shadows for the blades (Godot 4.8): the project's
+## input feeder routes this to the world's active light (sun by day, moon by night, via
+## SkyLightResolver) and clamps the quality mode to the engine's valid range. In
+## 4.8-dev6 the pass initializes in a running game but renders nothing (editor viewport
+## only) — the toggle is live and harmless, ready for a build that renders it.
+@export_group("Contact Shadows")
+@export var contact_shadows := false
+## The engine's precompiled quality variant: 0 SHORT / 1 NORMAL / 2 LONG (32/64/128
+## samples). Values above 2 are OUT OF RANGE and break the pass — the 2026-09-27 spam.
+@export_range(0, 2, 1) var contact_shadow_mode := 2
 ## Bisection switches for a renderer-side null-pipeline spam inside this node's compute
 ## list (bind null -> push-constant size -> dispatch-no-pipeline, once per frame): turn
 ## ONE off at a time in the inspector; the switch whose flip stops the spam names the
