@@ -213,13 +213,33 @@ void vertex() {
 		vec3 lean = wind_lean(root.xz);
 		vec2 wdir = lean.xy;
 		// COMB: turn the blade's face into the local wind so it bends along its own face, and
-		// the field reads as combed, not as tufts bending sideways. F and -F are
-		// the same flat blade, so turn toward whichever is nearer. Slow term (gust-driven).
+		// the field reads as combed, not as tufts bending sideways.
+		//
+		// The turn is a continuous ROTATION toward the wind AXIS, never a lerp toward +/-wdir:
+		// F and -F are the same face, so the target folds to whichever of the two is nearer IN
+		// ANGLE, and the face rotates by a fraction of that signed angle. The previous lerp had
+		// two discontinuities that snapped blades to a different angle as the gust veered
+		// (2026-09-27): the `dot >= 0 ? wdir : -wdir` target flip at face-perpendicular wind,
+		// and `normalize(mix(...) + vec2(1e-5, 0))` collapsing to world +X for face-antiparallel
+		// blades — a curved blade is NOT symmetric under that mirror (its bend flips with the
+		// face), so both read as a visible snap.
 		vec2 f2 = F.xz;
-		vec2 toward = dot(f2, wdir) >= 0.0 ? wdir : -wdir;
-		f2 = normalize(mix(f2, toward, wind_comb(root.xz) * free_) + vec2(1e-5, 0.0));
-		F = vec3(f2.x, 0.0, f2.y);
-		S = vec3(f2.y, 0.0, -f2.x);
+		float fl2 = length(f2);
+		f2 = fl2 > 1e-6 ? f2 / fl2 : vec2(1.0, 0.0);
+		float cs = dot(f2, wdir);
+		float sn = f2.x * wdir.y - f2.y * wdir.x;
+		float ang = atan(sn, cs);                    // signed angle f2 -> wdir, (-pi, pi]
+		if (ang > 1.5707963) {
+			ang -= 3.14159265;                       // fold: the wind is an AXIS (F == -F)
+		} else if (ang < -1.5707963) {
+			ang += 3.14159265;
+		}
+		float turn = ang * clamp(wind_comb(root.xz) * free_, 0.0, 1.0);
+		float ct = cos(turn);
+		float st = sin(turn);
+		vec2 f2r = vec2(f2.x * ct - f2.y * st, f2.x * st + f2.y * ct);
+		F = vec3(f2r.x, 0.0, f2r.y);
+		S = vec3(f2r.y, 0.0, -f2r.x);
 		bend += wdir * lean.z * free_ * resp;
 		vec2 wl = grass_wash_lean(root.xz, seed);   // the two-slot downwash (grass_wash.gdshaderinc)
 		hinge += wl;
