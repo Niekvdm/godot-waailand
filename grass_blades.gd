@@ -720,9 +720,11 @@ func _push_ground() -> void:
 	RenderingServer.material_set_param(rid, "ground_tint", tint)
 
 
-## A quality tier: {on, pitch (m), radius (m), far (Vector2: d_far0, d_far1), shadow (a ShadowMode name)}; on false
-## hides the grass. Takes effect next frame (pitch, radius and the ramps are per-frame params; the instance caps fit
-## pitch 0.1 at radius 120).
+## A quality tier: {on, pitch (m), radius (m), far (Vector2: d_far0, d_far1), shadow (a ShadowMode name)};
+## on false hides the grass. Optional budget keys — cap_hi, cap_lo, cap_shadow, shadow_radius — override the
+## node's exports; absent keys leave them. Pitch, radius, the ramps and the shadow mode are per-frame params
+## and switch live; the CAPS are read once, when _rt_init allocates the instance buffers — a tier applied by
+## a feeder child in its _ready (children ready first) is in time for that, a mid-game tier change is not.
 func apply_quality(p: Dictionary) -> void:
 	if not bool(p.get("on", true)):
 		set_grass_visible(false)
@@ -732,6 +734,14 @@ func apply_quality(p: Dictionary) -> void:
 	var far: Vector2 = p["far"]
 	d_far0 = far.x
 	d_far1 = far.y
+	if p.has("cap_hi"):
+		cap_hi = int(p["cap_hi"])
+	if p.has("cap_lo"):
+		cap_lo = int(p["cap_lo"])
+	if p.has("cap_shadow"):
+		cap_shadow = int(p["cap_shadow"])
+	if p.has("shadow_radius"):
+		shadow_radius = float(p["shadow_radius"])
 	set_grass_visible(true)
 	set_shadow_mode(ShadowMode[String(p["shadow"])] as ShadowMode)
 
