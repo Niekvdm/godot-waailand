@@ -250,6 +250,9 @@ var _clock := 0.0                  # seconds, wrapped every hour: the floating p
 ## disables the grass — a mid-session rebuild can break state that was fine at the first
 ## frame (2026-09-27's world-entry spam did exactly that), so the check runs every frame.
 var _was_broken := false
+## Where the eased wind tuning (lean/sway/comb) is headed — set_wind writes it,
+## _ease_wind chases it (see the low-pass there).
+var _wind_tune_target := {"lean_base": 0.30, "lean_gust": 0.60, "sway_amp": 0.10, "comb": 0.90}
 ## Debug: print a marker per dispatched frame, to correlate the renderer's C++ error
 ## bursts with GrassBlades' compute list (or prove they belong to someone else).
 @export var debug_dispatch_marker := false
@@ -550,10 +553,20 @@ func is_editor_mode() -> bool:
 func set_wind(direction: Vector2, speed_m_s: float, instant := false) -> void:
 	var p := GrassWindState.for_speed(speed_m_s)
 	wind.speed = p["speed"]
-	wind.lean_base = p["lean_base"]
-	wind.lean_gust = p["lean_gust"]
-	wind.sway_amp = p["sway_amp"]
-	wind.comb = p["comb"]
+	# The lean/sway/comb TUNING eases (in _ease_wind) instead of landing at once: a
+	# per-frame feeder (the weather sim's speed flutters slightly every frame) used to
+	# STEP the whole field's tuning, and every blade mid-bend snapped to the new
+	# equilibrium — the 2026-09-27 editor-preview "snap". The scroll rate still applies
+	# at once: the scroll is integrated, so a rate change moves nothing retroactively.
+	_wind_tune_target = {
+		"lean_base": p["lean_base"], "lean_gust": p["lean_gust"],
+		"sway_amp": p["sway_amp"], "comb": p["comb"],
+	}
+	if instant:
+		wind.lean_base = p["lean_base"]
+		wind.lean_gust = p["lean_gust"]
+		wind.sway_amp = p["sway_amp"]
+		wind.comb = p["comb"]
 	_wind_target = direction.normalized() if direction.length_squared() > 0.0 else GrassWindState.default_dir()
 	_wind_follow = true
 	if instant:
@@ -667,10 +680,16 @@ static func active() -> GrassBlades:
 	return tree.get_first_node_in_group(GROUP) as GrassBlades if tree != null else null
 
 
-## Every frame, before the dispatch: the wind turns toward its target.
+## Every frame, before the dispatch: the wind turns toward its target and the tuning
+## eases toward its own (a low-pass — per-frame feeder flutter becomes a smooth drift).
 func _ease_wind(dt: float) -> void:
 	if _wind_follow:
 		wind.dir = wind.dir.slerp(_wind_target, 1.0 - exp(-dt * wind_veer_rate)).normalized()
+	var w := 1.0 - exp(-dt * 8.0)
+	wind.lean_base = lerpf(wind.lean_base, _wind_tune_target["lean_base"], w)
+	wind.lean_gust = lerpf(wind.lean_gust, _wind_tune_target["lean_gust"], w)
+	wind.sway_amp = lerpf(wind.sway_amp, _wind_tune_target["sway_amp"], w)
+	wind.comb = lerpf(wind.comb, _wind_tune_target["comb"], w)
 
 
 ## The editor's preview wind: re-apply the exported speed, keeping the current direction.
