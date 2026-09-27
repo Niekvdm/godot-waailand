@@ -258,6 +258,16 @@ var _was_broken := false
 ## SkyLightResolver) and clamps the quality mode to the engine's valid range. In
 ## 4.8-dev6 the pass initializes in a running game but renders nothing (editor viewport
 ## only) — the toggle is live and harmless, ready for a build that renders it.
+## Editor-only: the wind speed (m/s) the preview grass answers to. The game's wind
+## comes from the weather system; the editor has none, so this stands in for it.
+## 0 = still air (the blades freeze). Live in the inspector.
+@export_group("Editor Wind")
+@export_range(0.0, 30.0, 0.1, "suffix:m/s") var editor_wind_speed := 4.0:
+	set(value):
+		editor_wind_speed = value
+		if _editor:
+			apply_editor_wind()
+
 @export_group("Contact Shadows")
 @export var contact_shadows := false
 ## The engine's precompiled quality variant: 0 SHORT / 1 NORMAL / 2 LONG (32/64/128
@@ -661,6 +671,15 @@ static func active() -> GrassBlades:
 func _ease_wind(dt: float) -> void:
 	if _wind_follow:
 		wind.dir = wind.dir.slerp(_wind_target, 1.0 - exp(-dt * wind_veer_rate)).normalized()
+
+
+## The editor's preview wind: re-apply the exported speed, keeping the current direction.
+## No-op in a game (the weather owns the wind there).
+func apply_editor_wind() -> void:
+	if not _editor:
+		return
+	var dir := wind.dir if wind.dir.length_squared() > 0.000001 else GrassWindState.default_dir()
+	set_wind(dir, editor_wind_speed)
 
 
 ## Every frame: the washes added since the last frame go to the shaders. Nothing is written when no one adds washes,
