@@ -79,8 +79,14 @@ const DEFAULT_SWELL := {"dir": Vector2(0.0, 1.0), "height": 0.0, "k": 0.037, "om
 ## Gather the blades into Voronoi clumps that share their height, facing and colour.
 @export var clumping := true
 ## Which blades cast shadows: NONE; SHADOW_BIN, a thinned and wider set near the camera drawn into the shadows
-## only; HIGH_CASTS, the HIGH blades themselves.
-@export var shadow_mode := ShadowMode.NONE
+## only; HIGH_CASTS, the HIGH blades themselves. Live: the setter re-applies the instance cast flags.
+@export var shadow_mode: ShadowMode = ShadowMode.NONE:
+	set(value):
+		if shadow_mode == value:
+			return
+		shadow_mode = value
+		if _live and is_inside_tree():
+			set_shadow_mode(value)
 ## SHADOW_BIN: the distance (m) within which blades cast.
 @export var shadow_radius := 10.0
 ## SHADOW_BIN: the share of blades that cast (0..1); they widen to keep the shadow's coverage.
