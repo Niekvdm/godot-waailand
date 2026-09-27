@@ -247,6 +247,13 @@ var _was_broken := false
 ## Debug: print a marker per dispatched frame, to correlate the renderer's C++ error
 ## bursts with GrassBlades' compute list (or prove they belong to someone else).
 @export var debug_dispatch_marker := false
+## Bisection switches for a renderer-side null-pipeline spam inside this node's compute
+## list (bind null -> push-constant size -> dispatch-no-pipeline, once per frame): turn
+## ONE off at a time in the inspector; the switch whose flip stops the spam names the
+## failing stage. Each guard is the stage's own validity check, so this is safe to leave on.
+@export var debug_skip_interaction := false
+@export var debug_skip_deco := false
+@export var debug_skip_surface_layer := false
 var _water_idx := RID()
 var _water_shapes := RID()
 var _road_origin := Vector2(INF, INF)
@@ -1423,12 +1430,13 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 	if debug_dispatch_marker:
 		print("[GrassBlades] dispatch frame ", Engine.get_process_frames())
 	var cl := rd.compute_list_begin()
-	interaction.rt_dispatch(rd, cl)
+	if not debug_skip_interaction:
+		interaction.rt_dispatch(rd, cl)
 	rd.compute_list_bind_compute_pipeline(cl, _place_pipe)
 	rd.compute_list_bind_uniform_set(cl, _place_set, 0)
 	rd.compute_list_set_push_constant(cl, push, push.size())
 	rd.compute_list_dispatch(cl, tiles, tiles, 1)
-	if bool(ground.get("surface", false)):
+	if bool(ground.get("surface", false)) and not debug_skip_surface_layer:
 		# The surface layer: the same kernel and tiles, appending to the same bins (the finalize counts both).
 		var sp := push.duplicate()
 		sp.encode_s32(12, 1)
@@ -1445,7 +1453,8 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 	rd.compute_list_set_push_constant(cl, fp, fp.size())
 	rd.compute_list_dispatch(cl, 1, 1, 1)
 	rd.compute_list_add_barrier(cl)
-	decorations.rt_frame(rd, cl, deco, _fin_pipe)
+	if not debug_skip_deco:
+		decorations.rt_frame(rd, cl, deco, _fin_pipe)
 	rd.compute_list_end()
 	if debug_timing:
 		rd.capture_timestamp(_ts_b)
