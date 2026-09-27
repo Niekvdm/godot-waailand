@@ -239,9 +239,14 @@ var _water_pack := {}              # the water pack last sent to the GPU (the qu
 var _water_index := {}             # lower-case water kind -> index (the growth table's water section)
 var _sea_kind := -1                # the sea's water kind (GrassWater.SEA_KIND), -1: none
 var _water_bytes := PackedByteArray()   # GrassTerrainGrowth.water_bytes: T.v[424..487]
-var _clock := 0.0
-## One-shot guard for the compute-state check in _rt_frame (see it).
-var _checked_live := false                  # seconds, wrapped every hour: the floating plants' bob
+var _clock := 0.0                  # seconds, wrapped every hour: the floating plants' bob
+## The compute-state check in _rt_frame reports the TRANSITION into "broken" once and
+## disables the grass — a mid-session rebuild can break state that was fine at the first
+## frame (2026-09-27's world-entry spam did exactly that), so the check runs every frame.
+var _was_broken := false
+## Debug: print a marker per dispatched frame, to correlate the renderer's C++ error
+## bursts with GrassBlades' compute list (or prove they belong to someone else).
+@export var debug_dispatch_marker := false
 var _water_idx := RID()
 var _water_shapes := RID()
 var _road_origin := Vector2(INF, INF)
@@ -1383,36 +1388,40 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 	if debug_timing:
 		_read_timing(rd)
 		rd.capture_timestamp(_ts_a)
-	# Fail LOUD, once, named: a null pipeline or invalid set bound into a compute list
-	# errors EVERY FRAME inside the renderer ("compute_list_bind_compute_pipeline:
-	# Parameter pipeline is null" + a push-constant size spam) with no hint which of the
-	# four kernels is the culprit — 2026-09-27's world-entry spam cost a day to localize
-	# to "the GrassBlades node". The check is one OR-chain per frame, cheaper than the spam.
-	if not _checked_live:
-		_checked_live = true
-		var broken: Array[String] = []
-		if not _place_pipe.is_valid():
-			broken.append("place pipeline")
-		if not _fin_pipe.is_valid():
-			broken.append("finalize pipeline")
-		if not _place_set.is_valid():
-			broken.append("place uniform set")
-		if not _fin_set.is_valid():
-			broken.append("finalize uniform set")
-		for i in 3:
-			if not _dst[i].is_valid() or not _cmd[i].is_valid():
-				broken.append("multimesh %d buffer" % i)
-		if not interaction.pipe_valid():
-			broken.append("interaction stamp pipeline")
-		if not decorations.pipe_valid():
-			broken.append("decoration pipeline")
-		if not broken.is_empty():
+	# Fail LOUD, named: a null pipeline or invalid set bound into a compute list errors
+	# EVERY FRAME inside the renderer ("compute_list_bind_compute_pipeline: Parameter
+	# pipeline is null" + a push-constant size error) with no hint WHICH kernel — the
+	# check runs EVERY frame and reports the TRANSITION into broken (state that was fine
+	# at the first frame can break after a mid-session RT rebuild), re-arming when valid.
+	var broken: Array[String] = []
+	if not _place_pipe.is_valid():
+		broken.append("place pipeline")
+	if not _fin_pipe.is_valid():
+		broken.append("finalize pipeline")
+	if not _place_set.is_valid():
+		broken.append("place uniform set")
+	if not _fin_set.is_valid():
+		broken.append("finalize uniform set")
+	for i in 3:
+		if not _dst[i].is_valid() or not _cmd[i].is_valid():
+			broken.append("multimesh %d buffer" % i)
+	if not interaction.pipe_valid():
+		broken.append("interaction stamp pipeline")
+	if not decorations.pipe_valid():
+		broken.append("decoration pipeline")
+	if broken.is_empty():
+		_was_broken = false
+	else:
+		if not _was_broken:
+			_was_broken = true
 			push_error("GrassBlades: compute state broken, grass disabled — %s. "
 					% ", ".join(broken)
 					+ "Check the GLSL compile errors logged at world load, and the tier caps "
 					+ "(a MultiMesh allocation that fails strands the buffers).")
 			_live = false
 			return
+	if debug_dispatch_marker:
+		print("[GrassBlades] dispatch frame ", Engine.get_process_frames())
 	var cl := rd.compute_list_begin()
 	interaction.rt_dispatch(rd, cl)
 	rd.compute_list_bind_compute_pipeline(cl, _place_pipe)
