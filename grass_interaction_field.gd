@@ -139,9 +139,14 @@ func rt_prepare(rd: RenderingDevice, p: Dictionary) -> void:
 		rd.buffer_update(_buf, 0, b.size(), b)
 
 
+## Whether the stamp pass can run (the host's fail-loud check reads this).
+func pipe_valid() -> bool:
+	return _pipe.is_valid() and _set.is_valid()
+
+
 ## Render thread: the stamp pass, into compute list `cl`.
 func rt_dispatch(rd: RenderingDevice, cl: int) -> void:
-	if not _set.is_valid():
+	if not pipe_valid():
 		return
 	rd.compute_list_bind_compute_pipeline(cl, _pipe)
 	rd.compute_list_bind_uniform_set(cl, _set, 0)

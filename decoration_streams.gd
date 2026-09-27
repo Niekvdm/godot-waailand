@@ -248,6 +248,11 @@ func rt_prepare(rd: RenderingDevice, payload: Dictionary) -> void:
 
 
 ## Inside GrassBlades' compute list, after the blades.
+## Whether the deco pass can run (the host's fail-loud check reads this).
+func pipe_valid() -> bool:
+	return _pipe.is_valid()
+
+
 func rt_frame(rd: RenderingDevice, cl: int, payload: Dictionary, fin_pipe: RID) -> void:
 	if not _pipe.is_valid() or not payload.has("kbytes"):
 		return
