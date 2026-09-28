@@ -542,6 +542,10 @@ func _ready() -> void:
 		push_error("GrassBlades: compute shaders did not import as RDShaderFile")
 		return
 	decorations.prepare(types)
+	# The flowers read the gust field too (wind_gust, wind_dir_at): without it they sampled an unset texture and
+	# every flower leaned at a full gust, 0.9 rad off the wind (2026-09-28).
+	for m in decorations.materials:
+		m.set_shader_parameter("gust_tex", _gust_tex)
 	_dummy_rut = ImageTexture.create_from_image(Image.create_empty(1, 1, false, Image.FORMAT_RGBAH))
 	_rut_tex = _dummy_rut.get_rid()
 	RenderingServer.call_on_render_thread(_rt_init.bind(place_f, fin_f, get_world_3d().scenario))

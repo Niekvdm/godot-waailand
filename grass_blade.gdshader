@@ -197,6 +197,9 @@ void vertex() {
 	vec2 b1;
 	vec2 b2;
 	vec2 b3;
+	float hb = 0.0;          // how far a heavy flow has moved the lean to the root (0 a breeze .. 1 a hinge)
+	vec2 flow_dir = vec2(0.0);   // where the air flows (unit, xz); zero under water
+	float up_k = 0.0;        // how much of the rest tilt and curl pointing INTO the flow it blows away, 0..1
 	float depth = sea_on ? sea_level - root.y : -1e4;
 	if (depth > 0.3) {
 		// Under water the sea moves the plant, not the air: the swell's orbital velocity at the bottom
@@ -206,54 +209,99 @@ void vertex() {
 		float amp = clamp(ub / 0.6, 0.0, 1.2) * resp * free_;
 		float ph = swell_k * dot(root.xz, swell_dir) + swell_phase + seed * 0.6;
 		v_wash = 0.0;
-		b1 = bend + swell_dir * amp * sin(ph);
-		b2 = bend + swell_dir * amp * sin(ph - 0.25);
+		b1 = (bend + swell_dir * amp * sin(ph)) / 3.0;
+		b2 = (bend + swell_dir * amp * sin(ph - 0.25)) * (2.0 / 3.0);
 		b3 = bend + swell_dir * amp * sin(ph - 0.5);
 	} else {
-		vec3 lean = wind_lean(root.xz);
-		vec2 wdir = lean.xy;
-		// COMB: turn the blade's face into the local wind so it bends along its own face, and
-		// the field reads as combed, not as tufts bending sideways.
+		// THE AIR (grass_wind.gdshaderinc): the natural wind and a rotor's wall jet (grass_wash_air) are ONE flow
+		// u (m/s). The blade leans with its speed by its species' wind response, saturating; its face turns into
+		// it (the comb); the sway and the wash's buffeting ride on top. The wash used to be a separate hinge laid
+		// over the wind's bend: the faces stayed combed to the wind, so blades fell over edge-on, and upwind of a
+		// rotor the wind curved a blade one way while the wash hinged it the other.
+		float g = wind_gust(root.xz);                // once: every term below reads the same gust
+		vec2 wdir = wind_dir_at(root.xz);
+		vec2 jet_u;
+		vec2 press;
+		float wash_s;
+		vec2 wash_d;
+		grass_wash_air(root.xz, seed, jet_u, press, wash_s, wash_d);
+		vec2 u = wdir * wind_air_speed(g) + jet_u;
+		float us = length(u);
+		vec2 udir = us > 1e-4 ? u / us : wdir;
+		// COMB: turn the blade's face into the flow so it bends along its own face, and the field reads as
+		// combed (a rotor's jet combs it outward), not as tufts bending sideways.
 		//
-		// The turn is a continuous ROTATION toward the wind AXIS, never a lerp toward +/-wdir
+		// The turn is a continuous ROTATION toward the flow's AXIS, never a lerp toward +/-udir
 		// (wind_comb_turn in grass_wind.gdshaderinc). The lerp snapped blades to a different angle as
 		// the gust veered (2026-09-27): the `dot >= 0 ? wdir : -wdir` target flip at face-perpendicular
 		// wind, and `normalize(mix(...) + vec2(1e-5, 0))` collapsing to world +X for face-antiparallel
 		// blades. Folding to the axis alone kept the first flip (2026-09-28): a curved blade is NOT
 		// symmetric under F -> -F (its bend flips with the face), so the turn tapers to zero at the
-		// perpendicular instead.
+		// perpendicular instead. It also fades where the flow stills (the wind meeting a jet head-on):
+		// the flow's direction is undefined there.
 		vec2 f2 = F.xz;
 		float fl2 = length(f2);
 		f2 = fl2 > 1e-6 ? f2 / fl2 : vec2(1.0, 0.0);
-		float cs = dot(f2, wdir);
-		float sn = f2.x * wdir.y - f2.y * wdir.x;
-		float ang = atan(sn, cs);                    // signed angle f2 -> wdir, (-pi, pi]
-		float turn = wind_comb_turn(ang, wind_comb(root.xz) * free_);
+		float cs = dot(f2, udir);
+		float sn = f2.x * udir.y - f2.y * udir.x;
+		float ang = atan(sn, cs);                    // signed angle f2 -> udir, (-pi, pi]
+		// A rigid species (wind response 0) does not turn; from 0.33 up the comb is whole.
+		float cmb = clamp(wind_comb_at(g) + smoothstep(2.0, 10.0, length(jet_u)), 0.0, 1.0) * smoothstep(0.3, 1.5, us)
+				* clamp(resp * 3.0, 0.0, 1.0);
+		float turn = wind_comb_turn(ang, cmb * free_);
 		float ct = cos(turn);
 		float st = sin(turn);
 		vec2 f2r = vec2(f2.x * ct - f2.y * st, f2.x * st + f2.y * ct);
 		F = vec3(f2r.x, 0.0, f2r.y);
 		S = vec3(f2r.y, 0.0, -f2r.x);
-		bend += wdir * lean.z * free_ * resp;
-		vec2 wl = grass_wash_lean(root.xz, seed);   // the two-slot downwash (grass_wash.gdshaderinc)
-		hinge += wl;
-		v_wash = clamp(length(wl) / 1.3, 0.0, 1.0);
+		// The lean moves toward the ROOT as the load grows: a breeze curves a blade along its length, a gale or a
+		// wall jet folds it at the base (a load along a cantilever bends it most at the root). hb 0: a third, two
+		// thirds and all of the angle at the control points; hb 1: all of it at each, a hinge.
+		vec2 lean_v = wind_lean_vec(u, resp) * free_;
+		hb = smoothstep(0.45, 1.2, length(lean_v));
+		flow_dir = udir;
+		up_k = smoothstep(0.3, 0.9, length(lean_v));
+		// The column under the disc presses the blade down about its root; the stiffest species less.
+		float rw = clamp(resp * 1.5, 0.0, 1.0);
+		hinge += press * rw;
+		v_wash = wash_s;
 		float th = type_height[ty];
-		b1 = bend + wdir * wind_sway(root.xz, th, seed, 1.0, TIME) * free_ * resp;
-		b2 = bend + wdir * wind_sway(root.xz, th, seed, 2.0, TIME) * free_ * resp;
-		b3 = bend + wdir * wind_sway(root.xz, th, seed, 3.0, TIME) * free_ * resp;
+		vec2 wperp = vec2(-wdir.y, wdir.x);
+		vec2 bperp = vec2(-wash_d.y, wash_d.x);
+		float sr = free_ * resp;
+		float br = wash_s * rw * free_;
+		vec2 s1 = wind_sway2(root.xz, g, th, seed, 1.0, TIME);
+		vec2 s2 = wind_sway2(root.xz, g, th, seed, 2.0, TIME);
+		vec2 s3 = wind_sway2(root.xz, g, th, seed, 3.0, TIME);
+		vec2 q1 = grass_wash_buffet(seed, 1.0, TIME) * br;
+		vec2 q2 = grass_wash_buffet(seed, 2.0, TIME) * br;
+		vec2 q3 = grass_wash_buffet(seed, 3.0, TIME) * br;
+		b1 = (bend + (wdir * s1.x + wperp * s1.y) * sr + wash_d * q1.x + bperp * q1.y) / 3.0
+				+ lean_v * mix(1.0 / 3.0, 1.0, hb);
+		b2 = (bend + (wdir * s2.x + wperp * s2.y) * sr + wash_d * q2.x + bperp * q2.y) * (2.0 / 3.0)
+				+ lean_v * mix(2.0 / 3.0, 1.0, hb);
+		b3 = bend + (wdir * s3.x + wperp * s3.y) * sr + wash_d * q3.x + bperp * q3.y + lean_v;
 	}
 
-	// Control points in the blade plane (tilt places the tip, bend lifts the midpoint).
+	// Control points in the blade plane (tilt places the tip, bend lifts the midpoint). A strong flow blows away
+	// the part of the rest tilt and of the curl that points INTO it (up_k): the comb turns a face to the flow's
+	// axis, so half the blades face upwind, and a blade tilted into a wall jet was only turned back upright (a
+	// responsive grass in a rotor's jet ring kept 0.8 of its height, tall spikes standing in the stream).
+	// Continuous: only the upwind component goes, by a factor that grows with the load.
 	float tilt = shp.x * (0.5 + seed);
-	vec3 tip_dir = normalize(U * cos(tilt) + F * sin(tilt));
+	vec2 tv = F.xz * sin(tilt);
+	tv -= flow_dir * (min(dot(tv, flow_dir), 0.0) * up_k);
+	vec3 tip_dir = normalize(U * cos(tilt) + vec3(tv.x, 0.0, tv.y));
+	vec2 cv = F.xz * (H * shp.y * (0.3 + 0.4 * seed));
+	cv -= flow_dir * (min(dot(cv, flow_dir), 0.0) * up_k);
 	vec3 p0 = root;
 	vec3 p1 = root + U * (H / 3.0);
-	vec3 p2 = root + U * (H * 0.66) + F * (H * shp.y * (0.3 + 0.4 * seed));
+	vec3 p2 = root + U * (H * 0.66) + vec3(cv.x, 0.0, cv.y);
 	vec3 p3 = root + tip_dir * H;
-	// Rotation about the root keeps each control point's distance: the blade does not stretch.
-	p1 = bend_point(p1, root, b1, min(length(b1), 1.45) / 3.0);
-	p2 = bend_point(p2, root, b2, min(length(b2), 1.45) * 2.0 / 3.0);
+	// Rotation about the root keeps each control point's distance: the blade does not stretch. b1..b3 are each
+	// point's rotation (direction and angle), already spread along the blade.
+	p1 = bend_point(p1, root, b1, min(length(b1), 1.45));
+	p2 = bend_point(p2, root, b2, min(length(b2), 1.45));
 	p3 = bend_point(p3, root, b3, min(length(b3), 1.45));
 	// Then the hinge: every control point about the root by the whole angle (the blade keeps its length).
 	float ha = min(length(hinge), 1.45);

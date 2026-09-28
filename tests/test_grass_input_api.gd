@@ -30,7 +30,10 @@ func test_the_wind() -> void:
 	assert_near(float(calm["sway_amp"]), 0.0, 1e-6, "zero wind: zero sway")
 	assert_near(float(calm["comb"]), 0.0, 1e-6, "zero wind: zero comb")
 	assert_true(calm["lean_base"] < p["lean_base"] and p["lean_base"] < gale["lean_base"], "lean grows with speed")
-	assert_true(gale["lean_base"] <= 0.30 * 1.8 + 1e-6, "and is capped")
+	assert_true(gale["lean_base"] > 0.30 * 1.8 + 1e-6, "a 14 m/s gale leans more than the old 7.2 m/s cap did")
+	var storm := GrassWindState.for_speed(40.0)
+	assert_near(float(storm["lean_base"]), 0.30 * GrassWindState.GALE_M_S / 4.0, 1e-6,
+		"and is capped at GALE_M_S (the shader saturates the lean itself)")
 	var b := _blades()
 	b.wind.dir = Vector2(1.0, 0.0)
 	b.set_wind(Vector2(0.0, 3.0), 3.0)

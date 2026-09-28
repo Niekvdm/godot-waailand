@@ -58,22 +58,36 @@ void vertex() {
 	vec3 n = normalize(mix(NORMAL, normalize(MODEL_NORMAL_MATRIX * CUSTOM1.xyz), morph));
 	float w = mix(CUSTOM0.w, CUSTOM1.w, morph);     // 0 at the root .. 1 at the top
 	float s = INSTANCE_CUSTOM.x;
-	// Crush, push and a rotor's wash lay the plant over about its ROOT, a rigid hinge, as the blades do
-	// (spread up the stem, they would leave it standing).
-	vec2 bend = vec2(0.0);
-	vec2 hinge = grass_wash_lean(root.xz, seed);
+	// THE AIR (grass_wind.gdshaderinc), as the blades take it: the natural wind and a rotor's wall jet are one flow,
+	// and the plant leans with it (0.6 of a blade, by its wind response). The column under a rotor, the crush and
+	// the push lay it over about its ROOT, a rigid hinge, as the blades do (spread up the stem, they would leave it
+	// standing). hinge_response 0 (corals, floating leaves: no stem to lay over) keeps the rotor out entirely.
+	float free_ = 1.0 - crush;
+	float g = wind_gust(root.xz);
+	vec2 wdir = wind_dir_at(root.xz);
+	vec2 jet_u;
+	vec2 press;
+	float wash_s;
+	vec2 wash_d;
+	grass_wash_air(root.xz, seed, jet_u, press, wash_s, wash_d);
+	vec2 u = wdir * wind_air_speed(g) + jet_u * hinge_response;
+	vec2 hinge = press;
 	float ll = length(lay);
 	if (ll > 1e-3) {
 		hinge += lay / ll * (crush * crush_angle + push * 0.6);
 	}
 	hinge *= hinge_response;
-	// Wind: the steady lean plus the TIME sway along the local wind, weighted up the stem so it
-	// curves; plumes flutter faster at the head. TIME is written HERE (motion vectors).
-	float free_ = 1.0 - crush;
-	vec3 lean = wind_lean(root.xz);
-	float sway = wind_sway(root.xz, 0.5, seed, 1.0 + 2.0 * w, TIME);   // a fixed height: the scale grows in
-	float fl = flutter * 0.15 * sin(TIME * 7.0 + seed * 20.0 + w * 3.0) * w * w;
-	bend += lean.xy * (lean.z * 0.6 + sway + fl) * free_ * wind_response;
+	// The sway along (and a little across) the local wind, weighted up the stem so it curves; plumes flutter faster
+	// at the head, as much as the air moves them (still air, still plumes: the flutter ran in a calm); the wash
+	// buffets. TIME is written HERE (motion vectors).
+	float lag = 1.0 + 2.0 * w;
+	vec2 sw = wind_sway2(root.xz, g, 0.5, seed, lag, TIME);   // a fixed height: the scale grows in
+	float air = clamp(length(u) / 4.0, 0.0, 2.0);
+	float fl = flutter * 0.15 * air * sin(TIME * TAU * rollover_hz(7.0 / TAU) + seed * 20.0 + w * 3.0) * w * w;
+	vec2 bf = grass_wash_buffet(seed, lag, TIME) * (wash_s * hinge_response);
+	vec2 bend = wind_lean_vec(u, wind_response * 0.6) * free_
+			+ (wdir * (sw.x + fl) + vec2(-wdir.y, wdir.x) * sw.y) * (free_ * wind_response)
+			+ (wash_d * bf.x + vec2(-wash_d.y, wash_d.x) * bf.y) * free_;
 	float bl = length(bend);
 	if (bl > 1e-4) {
 		vec3 axis = normalize(cross(vec3(0.0, 1.0, 0.0), vec3(bend.x, 0.0, bend.y) / bl));

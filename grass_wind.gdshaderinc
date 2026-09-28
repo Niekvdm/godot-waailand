@@ -10,6 +10,8 @@
 //     pass as TIME from inside vertex() (the engine flags a material animated only when
 //     TIME appears textually in vertex()) -> exact motion vectors.
 
+#include "res://addons/waailand/grass_time.gdshaderinc"   // rollover_hz: frequencies that survive TIME's rollover
+
 uniform sampler2D gust_tex : filter_linear_mipmap, repeat_enable;   // mipmapped: the far field samples it minified
 uniform vec2 wind_dir = vec2(0.94, 0.33);
 uniform vec2 wind_scroll = vec2(0.0);      // each offset integrated and wrapped on its own (GrassWindState):
@@ -27,6 +29,16 @@ uniform float debug_uniform_phase = -1.0;   // >= 0: sway phase from this UNIFOR
 uniform vec2 ripple_origin = vec2(0.0);     // the ripple's phase is measured from here (the camera; GrassWindState.anchor)
 uniform float ripple_phase = 0.0;           // its compensation for the origin's moves
 
+// THE AIR. The natural wind and a rotor's wall jet are one flow over the ground (m/s, world XZ), and a plant
+// answers the flow's speed with a lean that SATURATES: linear at a breeze (the tuning's lean_base + lean_gust g^2,
+// read as air speed through LEAN_PER_MS, leans exactly as before), toward LEAN_MAX in a gale or a wall jet, never
+// past it. (The linear lean put 1.62 rad on a full gust at the old 7.2 m/s cap; the wash was a separate hinge that
+// ignored the species and the comb.) GrassWindState mirrors these for the tests.
+const float LEAN_PER_MS = 0.075;   // rad per m/s at wind response 1: the 4 m/s tuning's 0.30 rad
+const float LEAN_MAX = 1.35;       // rad (77 degrees): the flattest a flow lays a plant
+const float LEAN_SAT_POW = 4.0;    // how sharply the lean saturates (a soft minimum of this power)
+const float WIND_CROSS = 0.35;     // the sway across the wind, of the sway along it
+
 // Gust intensity 0..1: the magnitude field scrolled downwind (wind x scrolled noise).
 float wind_gust(vec2 xz) {
 	float a = texture(gust_tex, xz * gust_scale - wind_scroll).r;
@@ -43,6 +55,29 @@ vec2 wind_dir_at(vec2 xz) {
 	float c = cos(a);
 	float s = sin(a);
 	return vec2(wind_dir.x * c - wind_dir.y * s, wind_dir.x * s + wind_dir.y * c);
+}
+
+// The natural wind's air speed (m/s) at gust g: the lean the tuning gives, read through LEAN_PER_MS.
+float wind_air_speed(float g) {
+	return (lean_base + lean_gust * g * g) / LEAN_PER_MS;
+}
+
+// How far a plant turns its face into the natural wind at gust g, 0..1: comb x (0.35 + g)^2.
+float wind_comb_at(float g) {
+	return clamp(comb * (0.35 + g) * (0.35 + g), 0.0, 1.0);
+}
+
+// The lean (rad) a flow of `speed` m/s gives a plant of wind response `resp`.
+float wind_lean_angle(float speed, float resp) {
+	float x = max(resp, 0.0) * LEAN_PER_MS * max(speed, 0.0);
+	return x / pow(1.0 + pow(x / LEAN_MAX, LEAN_SAT_POW), 1.0 / LEAN_SAT_POW);
+}
+
+// The flow `u`'s lean as a vector: toward where it pushes, its length the angle. Continuous through still air
+// (angle / speed tends to resp x LEAN_PER_MS), where the flow's direction is undefined.
+vec2 wind_lean_vec(vec2 u, float resp) {
+	float s = length(u);
+	return s > 1e-4 ? u * (wind_lean_angle(s, resp) / s) : u * (max(resp, 0.0) * LEAN_PER_MS);
 }
 
 // Steady downwind lean: xy = local direction, z = angle (rad). Grass is pushed over and
@@ -75,17 +110,26 @@ float wind_comb_turn(float ang, float c) {
 	return ang * clamp(c, 0.0, 1.0) * smoothstep(0.0, WIND_COMB_TAPER, 1.5707963 - abs(ang));
 }
 
+// The sway at control point `lag` (1..3) at gust g, rad: x along the local wind, y across it (WIND_CROSS of it, at
+// 1.37x the frequency, so a tip traces a loop rather than a line). See wind_sway below for the phase.
+vec2 wind_sway2(vec2 xz, float g, float height, float seed, float lag, float time) {
+	float f = rollover_hz(sway_freq * sqrt(0.5 / max(height, 0.05)));
+	float fc = rollover_hz(f * 1.37);
+	float tt = debug_uniform_phase >= 0.0 ? debug_uniform_phase : time;
+	float ph = tt * TAU * f - dot(xz - ripple_origin, wind_dir) * wave_k + ripple_phase + seed * 2.2 - lag * 0.45;
+	float pc = tt * TAU * fc + seed * 5.1 - lag * 0.6;
+	float a = sway_amp * (0.35 + g);
+	return vec2(a * sin(ph), a * WIND_CROSS * sin(pc));
+}
+
 // Oscillation angle (rad) for control point `lag` (1..3). Frequency falls with height;
 // phase from the blade seed AND the point's position along the blade (so it sways rather
 // than tilting rigidly) plus a ripple travelling downwind at sway_freq*TAU/wave_k m/s.
 // `height` must NOT change under a blade (the TYPE's height, not the live one): the phase is
 // TIME x f, so a frequency that moves (the grow ramp, snow burying the blade) would spin the sway
 // at any large TIME. The ripple is measured from ripple_origin, not the world origin.
+// Both of wind_sway2's frequencies fit TIME's rollover (rollover_hz).
 float wind_sway(vec2 xz, float height, float seed, float lag, float time) {
-	float g = wind_gust(xz);
-	float f = sway_freq * sqrt(0.5 / max(height, 0.05));
-	float tt = debug_uniform_phase >= 0.0 ? debug_uniform_phase : time;
-	float ph = tt * TAU * f - dot(xz - ripple_origin, wind_dir) * wave_k + ripple_phase + seed * 2.2 - lag * 0.45;
-	return sway_amp * (0.35 + g) * sin(ph);
+	return wind_sway2(xz, wind_gust(xz), height, seed, lag, time).x;
 }
 

@@ -24,6 +24,15 @@ const COMB_TAPER := 0.6
 const TUNING_KEYS := ["lean_base", "lean_gust", "sway_amp", "comb"]
 ## How fast the tuning eases toward its target (1/s): ~0.3 s to settle.
 const TUNING_RATE := 8.0
+## A plant's lean per m/s of air at wind response 1 (rad): grass_wind.gdshaderinc's LEAN_PER_MS (the 4 m/s tuning's
+## lean_base, 0.30 rad, read as air speed).
+const LEAN_PER_MS := 0.075
+## The flattest a flow lays a plant (rad): LEAN_MAX.
+const LEAN_MAX := 1.35
+## How sharply the lean saturates toward LEAN_MAX (a soft minimum of this power): LEAN_SAT_POW.
+const LEAN_SAT_POW := 4.0
+## The wind speed (m/s) the tuning stops growing at (for_speed): the shader saturates the lean past it.
+const GALE_M_S := 20.0
 
 ## Where the wind blows toward (xz, normalised).
 var dir := Vector2(0.94, 0.33).normalized()
@@ -57,19 +66,22 @@ var comb := 0.90
 var ripple_origin := Vector2.ZERO
 ## The ripple's phase compensation for the origin's moves (anchor).
 var ripple_phase := 0.0
+## TIME's rollover (s): the project's rendering/limits/time/time_rollover_secs, sent as waailand_time_rollover.
+var time_rollover := float(ProjectSettings.get_setting("rendering/limits/time/time_rollover_secs", 3600.0))
 ## Where the lean/sway/comb tuning is headed: set_tuning writes it, ease_tuning chases it, calm() stills it too.
 var tuning_target := {"lean_base": 0.30, "lean_gust": 0.60, "sway_amp": 0.10, "comb": 0.90}
 
 
 ## How the grass answers a wind of `speed_m_s`: at a 4 m/s breeze exactly the defaults; lean and gust scale with
-## the speed (x0.3 to x1.8 when blowing), the sway with its square root. Zero wind means ZERO
-## movement — still air, still grass (2026-09-27: the old 0.3 floor kept the field dancing in
+## the speed up to GALE_M_S (x5: the shader saturates the lean, so a gale lays the grass without folding it past
+## flat; this stopped at x1.8, 7.2 m/s, and a gale looked like a stiff breeze), the sway with its square root.
+## Zero wind means ZERO movement — still air, still grass (2026-09-27: the old 0.3 floor kept the field dancing in
 ## still air, which read as a bug). CALM_M_S remains the scroll/idle floor for winds above it.
 static func for_speed(speed_m_s: float) -> Dictionary:
-	var k := clampf(speed_m_s / 4.0, 0.0, 1.8)
+	var k := clampf(speed_m_s / 4.0, 0.0, GALE_M_S / 4.0)
 	var speed := maxf(speed_m_s, 0.0)
 	return {"speed": speed, "lean_base": 0.30 * k, "lean_gust": 0.60 * k,
-		"sway_amp": 0.10 * clampf(sqrt(k), 0.0, 1.4),
+		"sway_amp": 0.10 * sqrt(k),
 		"comb": 0.90 * clampf(k * 1.5, 0.0, 1.0)}
 
 
@@ -103,6 +115,24 @@ func anchor(cam_xz: Vector2) -> void:
 ## The ripple's phase at xz (the shader's travelling term, without TIME and the blade's own offsets).
 func ripple_term(xz: Vector2) -> float:
 	return -(xz - ripple_origin).dot(dir) * wave_k + ripple_phase
+
+
+## The natural wind's air speed (m/s) at gust `g` (0..1): the lean the tuning gives, read through LEAN_PER_MS
+## (grass_wind.gdshaderinc's wind_air_speed).
+func air_speed(g: float) -> float:
+	return (lean_base + lean_gust * g * g) / LEAN_PER_MS
+
+
+## The lean (rad) a flow of `speed` m/s gives a plant of wind response `resp`: linear at a breeze, saturating
+## toward LEAN_MAX (grass_wind.gdshaderinc's wind_lean_angle, mirrored for the tests).
+static func lean_angle(speed: float, resp: float) -> float:
+	var x := maxf(resp, 0.0) * LEAN_PER_MS * maxf(speed, 0.0)
+	return x / pow(1.0 + pow(x / LEAN_MAX, LEAN_SAT_POW), 1.0 / LEAN_SAT_POW)
+
+
+## `hz` moved to the nearest frequency with a whole number of cycles in `rollover` s (grass_time.gdshaderinc).
+static func rollover_hz(hz: float, rollover: float) -> float:
+	return roundf(hz * rollover) / rollover
 
 
 ## The COMB turn (rad) of a blade whose face is `ang` rad from the local wind (signed, -PI..PI), at comb factor `c`
@@ -154,4 +184,5 @@ func uniforms() -> Dictionary:
 		"lean_base": lean_base, "lean_gust": lean_gust, "sway_amp": sway_amp,
 		"sway_freq": sway_freq, "wave_k": wave_k, "swirl_rad": swirl_rad, "comb": comb,
 		"ripple_origin": ripple_origin, "ripple_phase": ripple_phase,
+		"waailand_time_rollover": time_rollover,
 	}

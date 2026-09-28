@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- The wind and a rotor's downwash are one flow of air. The wall jet joins the wind (m/s), so each species leans by
+  its own wind response (a rigid one stands, a meadow lies over), faces comb outward along the jet, and upwind of a
+  rotor the wind and the wash no longer bend a blade two ways. The lean saturates (a soft minimum toward 1.35 rad):
+  a breeze leans exactly as before, a gale lays the grass without folding it past flat, and a heavy load folds a
+  blade at its root, blowing away the rest tilt that pointed into it. Only the column under the disc still presses
+  as a hinge. The wash buffets at two frequencies per plant; the sway gets a cross-wind loop; a flower's plume
+  flutter follows the air (it fluttered in still air). The outwash profile peaks at 1.7-2 rotor radii (NASA's
+  outwash measurements) and reaches 4 footprints. New in `grass_wash.gdshaderinc`: `grass_wash_air`,
+  `grass_wash_buffet`; `grass_wash_lean` stays for other callers.
+- The flowers read the gust field: their materials never got it, so every flower leaned at a full gust and 0.9 rad off
+  the wind whatever the field did.
+- `GrassWindState.for_speed` grows to 20 m/s (`GALE_M_S`); it stopped at 7.2 m/s, so a gale looked like a stiff
+  breeze.
+- Every TIME-driven frequency fits TIME's rollover (`grass_time.gdshaderinc`, `rollover_hz`; GrassWindState sends
+  the project's `time_rollover_secs`): every plant's sway jumped once an hour.
+- `wind.calm()` holds: the tuning's easing brought the wind back within ~0.3 s (pictures, bakes and tests rendered
+  swaying grass). The eased target lives in GrassWindState (`set_tuning`, `ease_tuning`).
 - Wind: blades no longer snap to another angle as the wind veers. The comb (a blade turning its face into the local
   wind) flipped a blade by up to 180 degrees in one frame when the swirled wind crossed its face's perpendicular; the
   turn now tapers to zero there, so the blade turns smoothly (`wind_comb_turn`, `GrassWindState.comb_turn`).
