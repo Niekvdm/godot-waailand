@@ -54,18 +54,20 @@ var lean_gust := 0.60
 var sway_amp := 0.10
 ## The sway's frequency (Hz) for a 0.5 m blade; it scales with 1 / sqrt(height), so taller blades sway slower.
 var sway_freq := 1.3
-## The travelling ripple's wavenumber (rad/m): it runs downwind at sway_freq x TAU / wave_k m/s.
+## DEPRECATED (1.6): the shaders no longer read a travelling ripple; the fine gusts (honami_vel) carry the waves.
+## The ripple's wavenumber (rad/m), kept for callers of anchor / ripple_term.
 var wave_k := 0.35
 ## How far the local wind direction wanders (rad).
 var swirl_rad := 0.9
 ## How strongly blades turn their face into the local wind, 0..1.
 var comb := 0.90
-## The sway ripple's phase is measured from here, which follows the camera (anchor): measured from the
-## world origin, kilometres of distance x a veering wind direction would make the sway race and reverse.
-## ripple_phase compensates every move of the origin.
+## DEPRECATED (1.6, see wave_k). The ripple's phase was measured from here, which followed the camera (anchor).
 var ripple_origin := Vector2.ZERO
-## The ripple's phase compensation for the origin's moves (anchor).
+## DEPRECATED (1.6, see wave_k). The ripple's phase compensation for the origin's moves (anchor).
 var ripple_phase := 0.0
+## The air's velocity the fine gusts travel at (m/s, xz): dir x speed, eased with the tuning (ease_tuning), so a
+## sudden change of speed or direction does not jump the waves.
+var honami_vel := Vector2.ZERO
 ## TIME's rollover (s): the project's rendering/limits/time/time_rollover_secs, sent as waailand_time_rollover.
 var time_rollover := float(ProjectSettings.get_setting("rendering/limits/time/time_rollover_secs", 3600.0))
 ## Where the lean/sway/comb tuning is headed: set_tuning writes it, ease_tuning chases it, calm() stills it too.
@@ -102,8 +104,9 @@ static func _wrap(v: Vector2) -> Vector2:
 	return Vector2(fposmod(v.x, 1.0), fposmod(v.y, 1.0))
 
 
-## Follow the camera: move the ripple's origin to cam_xz and compensate the phase so the field does not
-## slide. The shader's term is -dot(xz - origin, dir) x wave_k + ripple_phase.
+## DEPRECATED (1.6, see wave_k): the shaders no longer read the ripple. Follow the camera: move the ripple's origin
+## to cam_xz and compensate the phase so the field does not slide (the term was -dot(xz - origin, dir) x wave_k +
+## ripple_phase).
 func anchor(cam_xz: Vector2) -> void:
 	var d := cam_xz - ripple_origin
 	if d.length_squared() < 1e-10:
@@ -112,7 +115,8 @@ func anchor(cam_xz: Vector2) -> void:
 	ripple_origin = cam_xz
 
 
-## The ripple's phase at xz (the shader's travelling term, without TIME and the blade's own offsets).
+## DEPRECATED (1.6, see wave_k). The ripple's phase at xz (the old travelling term, without TIME and the blade's own
+## offsets).
 func ripple_term(xz: Vector2) -> float:
 	return -(xz - ripple_origin).dot(dir) * wave_k + ripple_phase
 
@@ -166,6 +170,7 @@ func ease_tuning(dt: float) -> void:
 	var w := 1.0 - exp(-dt * TUNING_RATE)
 	for k in TUNING_KEYS:
 		set(k, lerpf(float(get(k)), float(tuning_target[k]), w))
+	honami_vel = honami_vel.lerp(dir * speed, w)
 
 
 ## Stills the grass at once and keeps it still until the next set_tuning: no lean, sway or comb (the gust field
@@ -182,7 +187,6 @@ func uniforms() -> Dictionary:
 		"wind_dir": dir, "wind_scroll": scroll, "wind_scroll2": scroll2, "wind_scroll_sw": scroll_sw,
 		"gust_scale": gust_scale,
 		"lean_base": lean_base, "lean_gust": lean_gust, "sway_amp": sway_amp,
-		"sway_freq": sway_freq, "wave_k": wave_k, "swirl_rad": swirl_rad, "comb": comb,
-		"ripple_origin": ripple_origin, "ripple_phase": ripple_phase,
-		"waailand_time_rollover": time_rollover,
+		"sway_freq": sway_freq, "swirl_rad": swirl_rad, "comb": comb,
+		"honami_vel": honami_vel, "waailand_time_rollover": time_rollover,
 	}

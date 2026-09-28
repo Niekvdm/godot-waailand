@@ -648,6 +648,7 @@ func set_wind(direction: Vector2, speed_m_s: float, instant := false) -> void:
 	_wind_follow = true
 	if instant:
 		wind.dir = _wind_target
+		wind.honami_vel = wind.dir * wind.speed
 
 
 ## The date the grass shows (0 = 1 January). Nothing happens when it is unchanged, so a feeder may call it every frame
@@ -1183,7 +1184,6 @@ func _update_material(cam: Camera3D, dt: float) -> void:
 	_send(&"r_edge", radius, false)
 	_send(&"edge_fade", edge_fade_m, false)
 	wind.advance(dt)
-	wind.anchor(Vector2(cam.global_position.x, cam.global_position.z))
 	if _season_dirty:
 		season.bind(decorations.kinds, types)
 		GrassSeason.apply_types(types, _day_of_year, season)

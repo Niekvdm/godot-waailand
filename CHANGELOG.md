@@ -11,6 +11,11 @@
   flutter follows the air (it fluttered in still air). The outwash profile peaks at 1.7-2 rotor radii (NASA's
   outwash measurements) and reaches 4 footprints. New in `grass_wash.gdshaderinc`: `grass_wash_air`,
   `grass_wash_buffet`; `grass_wash_lean` stays for other callers.
+- The fine gusts: the waves running through a field travel at the wind's own velocity (`wind_honami`, a finer octave
+  of the gust texture on a flow map, TIME-driven so it carries motion vectors). They replace the sway ripple, which ran
+  at ~20 m/s whatever the wind; each plant's sway now has its own phase. `GrassWindState.honami_vel` (eased);
+  `anchor`, `ripple_term`, `ripple_origin`, `ripple_phase` and `wave_k` are deprecated (the shaders no longer read
+  them).
 - The flowers read the gust field: their materials never got it, so every flower leaned at a full gust and 0.9 rad off
   the wind whatever the field did.
 - `GrassWindState.for_speed` grows to 20 m/s (`GALE_M_S`); it stopped at 7.2 m/s, so a gale looked like a stiff

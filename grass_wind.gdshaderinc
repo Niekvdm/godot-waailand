@@ -6,7 +6,7 @@
 // MOTION VECTORS: Godot runs vertex() twice (TIME and TIME - delta) but does NOT
 // double-buffer uniforms or textures. So:
 //   - gust scroll, lean: uniform-driven, SLOW -> small motion-vector error, accepted;
-//   - sway, travelling ripple: driven by `time`, which the caller MUST
+//   - sway, the fine gusts (wind_honami): driven by `time`, which the caller MUST
 //     pass as TIME from inside vertex() (the engine flags a material animated only when
 //     TIME appears textually in vertex()) -> exact motion vectors.
 
@@ -22,12 +22,10 @@ uniform float lean_base = 0.30;
 uniform float lean_gust = 0.60;
 uniform float sway_amp = 0.10;
 uniform float sway_freq = 1.3;
-uniform float wave_k = 0.35;
 uniform float swirl_rad = 0.9;       // how far the local wind direction wanders (rad)
 uniform float comb = 0.90;           // how strongly blades turn their face into the local wind
 uniform float debug_uniform_phase = -1.0;   // >= 0: sway phase from this UNIFORM (a negative control for motion-vector tests)
-uniform vec2 ripple_origin = vec2(0.0);     // the ripple's phase is measured from here (the camera; GrassWindState.anchor)
-uniform float ripple_phase = 0.0;           // its compensation for the origin's moves
+uniform vec2 honami_vel = vec2(0.0);        // m/s: the air's velocity the fine gusts ride (GrassWindState, eased)
 
 // THE AIR. The natural wind and a rotor's wall jet are one flow over the ground (m/s, world XZ), and a plant
 // answers the flow's speed with a lean that SATURATES: linear at a breeze (the tuning's lean_base + lean_gust g^2,
@@ -38,6 +36,9 @@ const float LEAN_PER_MS = 0.075;   // rad per m/s at wind response 1: the 4 m/s 
 const float LEAN_MAX = 1.35;       // rad (77 degrees): the flattest a flow lays a plant
 const float LEAN_SAT_POW = 4.0;    // how sharply the lean saturates (a soft minimum of this power)
 const float WIND_CROSS = 0.35;     // the sway across the wind, of the sway along it
+const float HONAMI_SCALE = 0.07;   // UV per metre of the gust texture's fine octave: waves ~5 m apart
+const float HONAMI_PERIOD = 2.0;   // s: the flow map's cycle (fitted to TIME's rollover)
+const float HONAMI_GAIN = 0.6;     // how far the fine gusts swing the gust (0..1)
 
 // Gust intensity 0..1: the magnitude field scrolled downwind (wind x scrolled noise).
 float wind_gust(vec2 xz) {
@@ -55,6 +56,30 @@ vec2 wind_dir_at(vec2 xz) {
 	float c = cos(a);
 	float s = sin(a);
 	return vec2(wind_dir.x * c - wind_dir.y * s, wind_dir.x * s + wind_dir.y * c);
+}
+
+// The FINE GUSTS (honami, the waves running through a field): a finer octave of the gust texture travelling at the
+// air's own velocity, -0.5..0.5 about its mean. TIME-driven, so they carry exact motion vectors: two samples offset
+// by honami_vel x a flow map's phase, cross-faded so each one's jump back at the end of its cycle happens while it is
+// faded out. A veer or a change of speed moves the offsets by at most the speed x the period. They replaced a sway
+// ripple travelling at TAU x f / wave_k, ~20 m/s whatever the wind (5x a 4 m/s breeze); a plane wave that tracked the
+// wind's speed would race far from the camera whenever the speed or the direction moved.
+float wind_honami(vec2 xz, float time) {
+	float per = waailand_time_rollover / round(waailand_time_rollover / HONAMI_PERIOD);
+	float ph = fract(time / per);
+	float ph2 = fract(ph + 0.5);
+	// ONE pattern in both samples: in a light wind they nearly coincide, so the blend does not pulse (two patterns
+	// cross-faded pulsed at 1 / period even in still air).
+	float a = texture(gust_tex, (xz - honami_vel * (ph * per)) * HONAMI_SCALE + vec2(0.13, 0.71)).r;
+	float b = texture(gust_tex, (xz - honami_vel * (ph2 * per)) * HONAMI_SCALE + vec2(0.13, 0.71)).r;
+	float wa = 1.0 - abs(2.0 * ph - 1.0);   // 0 where a jumps back (ph wraps), 1 where b does
+	return mix(b, a, wa) - 0.5;
+}
+
+// The gust at xz with the fine gusts riding on it (the lean and the sway read this; the comb reads the plain gust,
+// or the faces would turn with every passing wave).
+float wind_gust_fine(vec2 xz, float time) {
+	return clamp(wind_gust(xz) + HONAMI_GAIN * wind_honami(xz, time), 0.0, 1.0);
 }
 
 // The natural wind's air speed (m/s) at gust g: the lean the tuning gives, read through LEAN_PER_MS.
@@ -116,18 +141,18 @@ vec2 wind_sway2(vec2 xz, float g, float height, float seed, float lag, float tim
 	float f = rollover_hz(sway_freq * sqrt(0.5 / max(height, 0.05)));
 	float fc = rollover_hz(f * 1.37);
 	float tt = debug_uniform_phase >= 0.0 ? debug_uniform_phase : time;
-	float ph = tt * TAU * f - dot(xz - ripple_origin, wind_dir) * wave_k + ripple_phase + seed * 2.2 - lag * 0.45;
+	float ph = tt * TAU * f + seed * TAU - lag * 0.45;
 	float pc = tt * TAU * fc + seed * 5.1 - lag * 0.6;
 	float a = sway_amp * (0.35 + g);
 	return vec2(a * sin(ph), a * WIND_CROSS * sin(pc));
 }
 
 // Oscillation angle (rad) for control point `lag` (1..3). Frequency falls with height;
-// phase from the blade seed AND the point's position along the blade (so it sways rather
-// than tilting rigidly) plus a ripple travelling downwind at sway_freq*TAU/wave_k m/s.
-// `height` must NOT change under a blade (the TYPE's height, not the live one): the phase is
-// TIME x f, so a frequency that moves (the grow ramp, snow burying the blade) would spin the sway
-// at any large TIME. The ripple is measured from ripple_origin, not the world origin.
+// phase from the blade seed (a whole turn of it: neighbours do not sway in step, the fine gusts
+// carry the field's travelling waves) AND the point's position along the blade (so it sways
+// rather than tilting rigidly). `height` must NOT change under a blade (the TYPE's height, not
+// the live one): the phase is TIME x f, so a frequency that moves (the grow ramp, snow burying
+// the blade) would spin the sway at any large TIME.
 // Both of wind_sway2's frequencies fit TIME's rollover (rollover_hz).
 float wind_sway(vec2 xz, float height, float seed, float lag, float time) {
 	return wind_sway2(xz, wind_gust(xz), height, seed, lag, time).x;

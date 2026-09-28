@@ -218,7 +218,8 @@ void vertex() {
 		// it (the comb); the sway and the wash's buffeting ride on top. The wash used to be a separate hinge laid
 		// over the wind's bend: the faces stayed combed to the wind, so blades fell over edge-on, and upwind of a
 		// rotor the wind curved a blade one way while the wash hinged it the other.
-		float g = wind_gust(root.xz);                // once: every term below reads the same gust
+		float g0 = wind_gust(root.xz);               // once: the comb reads the plain gust (not each passing wave)
+		float g = clamp(g0 + HONAMI_GAIN * wind_honami(root.xz, TIME), 0.0, 1.0);   // the lean and the sway ride the fine gusts
 		vec2 wdir = wind_dir_at(root.xz);
 		vec2 jet_u;
 		vec2 press;
@@ -246,7 +247,7 @@ void vertex() {
 		float sn = f2.x * udir.y - f2.y * udir.x;
 		float ang = atan(sn, cs);                    // signed angle f2 -> udir, (-pi, pi]
 		// A rigid species (wind response 0) does not turn; from 0.33 up the comb is whole.
-		float cmb = clamp(wind_comb_at(g) + smoothstep(2.0, 10.0, length(jet_u)), 0.0, 1.0) * smoothstep(0.3, 1.5, us)
+		float cmb = clamp(wind_comb_at(g0) + smoothstep(2.0, 10.0, length(jet_u)), 0.0, 1.0) * smoothstep(0.3, 1.5, us)
 				* clamp(resp * 3.0, 0.0, 1.0);
 		float turn = wind_comb_turn(ang, cmb * free_);
 		float ct = cos(turn);

@@ -63,7 +63,7 @@ void vertex() {
 	// the push lay it over about its ROOT, a rigid hinge, as the blades do (spread up the stem, they would leave it
 	// standing). hinge_response 0 (corals, floating leaves: no stem to lay over) keeps the rotor out entirely.
 	float free_ = 1.0 - crush;
-	float g = wind_gust(root.xz);
+	float g = wind_gust_fine(root.xz, TIME);     // the fine gusts ride on the gust (TIME: motion vectors)
 	vec2 wdir = wind_dir_at(root.xz);
 	vec2 jet_u;
 	vec2 press;
