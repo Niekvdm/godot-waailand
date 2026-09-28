@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- GrassBlades node icon: a wind-bent tuft of blades. -->
+  <!-- back blades (dark) -->
+  <path d="M 46 128 C 40 100 24 74 8 62 C 26 66 44 84 50 106 Z" fill="#33531f"/>
+  <path d="M 84 128 C 92 96 108 70 124 60 C 112 82 100 108 94 128 Z" fill="#33531f"/>
+  <!-- mid blades -->
+  <path d="M 58 128 C 50 92 32 58 14 40 C 38 52 58 86 64 116 Z" fill="#4a7c2e"/>
+  <path d="M 74 128 C 78 92 92 58 112 42 C 102 68 88 100 82 128 Z" fill="#4a7c2e"/>
+  <!-- front blades -->
+  <path d="M 60 128 C 54 96 44 56 46 22 C 58 52 68 96 70 128 Z" fill="#63a03c"/>
+  <path d="M 72 128 C 74 100 78 64 92 36 C 90 70 82 104 78 128 Z" fill="#63a03c"/>
+  <!-- centre blade (lightest, strongest bend) -->
+  <path d="M 64 128 C 62 94 60 48 72 12 C 76 52 74 96 72 128 Z" fill="#7fbf4d"/>
+  <!-- wind swish -->
+  <path d="M 20 34 C 44 22 78 18 108 26 C 80 24 48 28 24 40 Z" fill="#7fbf4d" opacity="0.65"/>
+</svg>

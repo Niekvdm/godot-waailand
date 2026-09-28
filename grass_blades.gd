@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Digitzone
 # SPDX-License-Identifier: MIT
+@icon("res://addons/waailand/grass_blades_icon.svg")
 @tool
 class_name GrassBlades
 extends Node3D
@@ -36,50 +37,111 @@ const MAX_WASH := 2
 ## A swell's keys and their values when set_sea is not told them.
 const DEFAULT_SWELL := {"dir": Vector2(0.0, 1.0), "height": 0.0, "k": 0.037, "omega": 0.602, "phase": 0.0}
 
-## Metres between two grid cells: at most one blade grows in a cell.
-@export var grid_pitch := 0.1
-## How far from the camera the blades reach (m).
-@export var radius := 120.0
-## Over the last this many metres of `radius` the blades thin out to none.
-@export var edge_fade_m := 20.0
-## From this distance (m) the HIGH blades morph toward the LOW shape, which they reach at d_switch.
-@export var d_morph := 6.0
-## The distance (m) where the HIGH blades give way to LOW ones.
-@export var d_switch := 10.0
-## The share of blades kept past d_switch (0..1); the survivors widen to keep the coverage.
-@export var k_lo := 0.25
-## How much the survivors widen as the field thins: width x keep^-width_exp (1 keeps the coverage exactly).
-@export var width_exp := 1.0
-## The far carpet: past the LOD switch the field keeps thinning to k_far over [d_far0, d_far1] while
-## the survivors widen as 1/keep, capped at width_cap. Active only when it fits inside
-## [d_switch, radius - edge_fade_m]; otherwise it switches off.
-@export var k_far := 0.03
-## Where the far carpet's thinning begins (m).
-@export var d_far0 := 25.0
-## Where the far carpet reaches k_far (m).
-@export var d_far1 := 90.0
-## The most a thinned-out blade may widen (x its own width).
-@export var width_cap := 50.0
-## Metres of camera travel over which a blade grows in or shrinks away at its threshold, so none pops.
-@export var grow_m := 2.0
-## Metres added to the view frustum test, so blades just outside the view still cast their shadows in.
-@export var shadow_margin := 1.5
-## No blades on ground steeper than this (degrees).
-@export var max_slope_deg := 55.0
-## How far each root sits below the ground (m), so no blade floats over a bump.
-@export var root_sink := 0.03
-## The HIGH bin's capacity (blades); a frame's excess is dropped and flagged in `stats`.
-@export var cap_hi := 196608
-## The LOW bin's capacity (blades).
-@export var cap_lo := 196608
-## The SHADOW bin's capacity (blades).
-@export var cap_shadow := 65536
-## Skip the tiles and blades outside the camera's view.
+@export_group("Field")
+
+## Density: metres between two placement grid cells — at most one blade grows per cell.
+## 0.1 = up to 100 blades per square metre. Smaller values are denser and cost more.
+## Live: applies from the next dispatch.
+@export_range(0.01, 4.0, 0.005, "suffix:m") var grid_pitch := 0.1
+
+## Reach: how far from the camera the blades grow, in metres. The single biggest perf
+## lever — instance demand grows with the SQUARE of this. The quality tiers set it at
+## runtime; the value here is what the editor preview and a game without a feeder use.
+## Live: applies from the next dispatch.
+@export_range(4.0, 2000.0, 1.0, "suffix:m") var radius := 120.0
+
+## Edge fade: over the last this many metres of the radius the field thins out to none,
+## so the boundary never reads as a hard line. Live: applies from the next dispatch.
+@export_range(0.0, 500.0, 0.5, "suffix:m") var edge_fade_m := 20.0
+
+## Growth blend: metres of camera travel over which a blade grows in or shrinks away
+## when it crosses a density threshold, so none pops in or out. Live.
+
+@export_range(0.0, 20.0, 0.1, "suffix:m") var grow_m := 2.0
+
+@export_group("Distance LOD")
+
+## The distance where blades begin MORPHING from the detailed near shape toward the
+## sparse far shape. Must stay below the switch distance. Live: applies next dispatch.
+@export_range(0.0, 200.0, 0.5, "suffix:m") var d_morph := 6.0
+
+## The LOD switch: past this distance (m) blades leave the detailed HIGH bin and only
+## the thinned LOW field continues. Live: applies from the next dispatch.
+@export_range(1.0, 500.0, 0.5, "suffix:m") var d_switch := 10.0
+
+## Past the LOD switch, this share (0..1) of blades is kept; the survivors widen to
+## cover for the missing ones. Live: applies from the next dispatch.
+@export_range(0.0, 1.0, 0.01) var k_lo := 0.25
+
+## How much the surviving blades widen as the field thins: width x keep^-width_exp.
+## 1 keeps the ground coverage exactly; below 1 lets the far field thin visually.
+## Live: applies from the next dispatch.
+@export_range(0.0, 4.0, 0.05) var width_exp := 1.0
+
+@export_group("Far Carpet")
+
+## Past the far-carpet start the field keeps thinning toward this share (0..1) of the
+## blades. Active only when the carpet fits inside the radius minus the edge fade;
+## otherwise it switches itself off. Live: applies from the next dispatch.
+@export_range(0.0, 1.0, 0.005) var k_far := 0.03
+
+## Where the far carpet's thinning begins (m from the camera). Live.
+@export_range(0.0, 2000.0, 1.0, "suffix:m") var d_far0 := 25.0
+
+## Where the far carpet reaches its thinnest (m from the camera). Live.
+@export_range(0.0, 4000.0, 1.0, "suffix:m") var d_far1 := 90.0
+
+## The most a thinned-out blade may widen, times its own width — keeps blades from
+## becoming ribbons. Live: applies from the next dispatch.
+@export_range(1.0, 200.0, 1.0) var width_cap := 50.0
+
+@export_group("Placement")
+
+## No blades grow on ground steeper than this many degrees.
+@export_range(0.0, 89.0, 0.5, "suffix:deg") var max_slope_deg := 55.0
+
+## How far each blade's root sits below the ground surface (m), so no blade floats
+## above a bump in the terrain between height samples.
+@export_range(0.0, 1.0, 0.005, "suffix:m") var root_sink := 0.03
+
+## The ground's species grow in patches of this size (m): each patch grows ONE species
+## of its ground slot's mix, so fields read as mottled populations, not confetti.
+## Live: applies from the next dispatch.
+@export_range(0.5, 50.0, 0.5, "suffix:m") var species_patch_m := 3.0
+
+## Skip tiles and blades outside the camera's view frustum. Off: the whole radius
+## dispatches every frame (for reflections, shadow views and debugging).
 @export var cull_frustum := true
-## Gather the blades into Voronoi clumps that share their height, facing and colour.
+
+## Gather blades into Voronoi clumps that share their height, lean and colour, pulled
+## toward their clump centre — the field reads as tussocks instead of uniform confetti.
+## Live: applies from the next dispatch.
 @export var clumping := true
-## Which blades cast shadows: NONE; SHADOW_BIN, a thinned and wider set near the camera drawn into the shadows
-## only; HIGH_CASTS, the HIGH blades themselves. Live: the setter re-applies the instance cast flags.
+
+@export_group("Buffers")
+
+## The near (HIGH) bin's capacity in blades. A frame's overflow is DROPPED and flagged
+## in `stats` — blades vanish in bands that follow the camera's facing.
+## BINDS WHEN THE GPU BUFFERS ARE ALLOCATED: set it before the scene runs
+## (a quality tier carries its own); a mid-session edit does nothing.
+@export var cap_hi := 196608
+
+## The far (LOW) bin's capacity in blades — the big one; size it to the radius
+## (about 850000 for a 220 m radius on dense ground). Same allocation rule as cap_hi.
+@export var cap_lo := 196608
+
+## The shadow ring's capacity in blades (SHADOW_BIN mode only). Same allocation rule.
+@export var cap_shadow := 65536
+
+@export_group("Shadows")
+
+## Extra metres added to the view-frustum test, so blades just outside the view still
+## cast their shadows into it. Live: applies from the next dispatch.
+@export_range(0.0, 50.0, 0.1, "suffix:m") var shadow_margin := 1.5
+
+## Which blades cast shadows: NONE — none; SHADOW_BIN — a dedicated, thinned and
+## widened set of near blades drawn into the shadow map only; HIGH_CASTS — the detailed
+## near blades themselves. Live: the setter re-applies the instance cast flags.
 @export var shadow_mode: ShadowMode = ShadowMode.NONE:
 	set(value):
 		if shadow_mode == value:
@@ -87,27 +149,50 @@ const DEFAULT_SWELL := {"dir": Vector2(0.0, 1.0), "height": 0.0, "k": 0.037, "om
 		shadow_mode = value
 		if _live and is_inside_tree():
 			set_shadow_mode(value)
-## SHADOW_BIN: the distance (m) within which blades cast.
-@export var shadow_radius := 10.0
-## SHADOW_BIN: the share of blades that cast (0..1); they widen to keep the shadow's coverage.
-@export var shadow_keep := 0.35
-## Measure each dispatch: its GPU time (compute_ms) and its main-thread parts (cpu_split).
-@export var debug_timing := false
-## Add the project's feeder nodes (GrassBladesConfig.runtime_inputs and editor_inputs: wind, weather, trails,
-## downwash, ruts, roads, season, sea, quality) as children. Tests turn it off: live weather would change the
-## look a test measures, and a sea or quality feeder would override the values the test sets.
-@export var inputs := true
-## The far field in the terrain shader under this terrain (GrassFarField): past the blades, the carpet's
-## measured brightness and grain and the canopy's light, on the texture's own colour. Switched with the
-## blades. Off: the terrain renders exactly as without grass.
+
+## SHADOW_BIN only: how far from the camera (m) blades cast into the shadow map.
+@export_range(1.0, 200.0, 1.0, "suffix:m") var shadow_radius := 10.0
+
+## SHADOW_BIN only: the share (0..1) of blades that cast; the casters widen to keep
+## the shadow's coverage.
+@export_range(0.0, 1.0, 0.01) var shadow_keep := 0.35
+
+@export_group("Terrain & Wind")
+
+## The far field in the terrain shader under this terrain (GrassFarField): past the
+## blades, the carpet's measured brightness and grain and the canopy's light, on the
+## texture's own colour. Off: the terrain renders exactly as without grass. Live.
 @export var far_field := true
-## The ground's species grow in patches this size (m; species_patch in grass_place_common.glsli): each
-## patch grows one species of its texture slot's mix.
-@export var species_patch_m := 3.0
-## How fast the grass turns to a new wind direction (1/s; set_wind): slow, so a gust's veer does not flick it.
-@export var wind_veer_rate := 0.4
-## How far a plant floating on inland water bobs (m); the sea's swell moves those on the sea.
-@export var water_bob_m := 0.01
+
+## This map's ground-rules file (which species each ground slot grows). Empty reads
+## the default location beside the scene, and no file at all means the shared growth
+## table. Changing it re-reads the rules live.
+@export_file("*.json") var ground_rules_path := "":
+	set(value):
+		ground_rules_path = value
+		if is_inside_tree():
+			reload_rules()
+
+## How fast the grass turns toward a new wind direction (1/s): slow enough that a
+## veering gust does not flick the blades. Live.
+@export_range(0.05, 4.0, 0.05) var wind_veer_rate := 0.4
+
+## How far a plant floating on inland water bobs up and down (m); plants on the sea
+## move with its swell instead. Live.
+@export_range(0.0, 0.2, 0.005, "suffix:m") var water_bob_m := 0.01
+
+@export_group("System & Diagnostics")
+
+## Attach the project's feeder children (wind, weather, trails, downwash, ruts, roads,
+## season, sea, quality — GrassBladesConfig.runtime_inputs and editor_inputs). Applies
+## when the node enters the tree; tests turn it off so live weather cannot skew a
+## measured look.
+@export var inputs := true
+
+## Measure each dispatch: its GPU time (compute_ms) and its main-thread parts
+## (cpu_split), readable through the debug_timing stats. Live.
+@export var debug_timing := false
+
 # The sea level in metres (set_sea). NaN means no sea: every point is dry land and the sea species never grow.
 var _sea_level := NAN
 # The dominant swell, for the surge (grass_blade.gdshader): the direction it travels, crest-to-trough height (m),
@@ -197,10 +282,8 @@ var water_maps := GrassMaps.new()
 ## The water maps' folder is the ground maps' with this after it.
 const WATER_FOLDER_SUFFIX := "_water"
 var _warned_side_maps := false
-## The map's ground rules file; "" = <GrassBladesConfig.grounds_dir>/<the scene this node is saved in>.json (the
-## game instances that scene and the editor edits it, so both find the same file). No file: the shared growth table.
-@export_file("*.json") var ground_rules_path := ""
-## The map's ground rules (null: the shared growth table).
+## The map's ground rules (null: the shared growth table). The file it loads is the
+## `ground_rules_path` export in the Terrain & Wind group.
 var rules: GrassGroundRules = null
 ## The map's season settings (the calendar without rules).
 var season := GrassSeasonPlan.new()
