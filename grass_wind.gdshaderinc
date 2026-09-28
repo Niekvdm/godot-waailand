@@ -58,6 +58,23 @@ float wind_comb(vec2 xz) {
 	return clamp(comb * (0.35 + g) * (0.35 + g), 0.0, 1.0);
 }
 
+// The COMB turn (rad) of a blade whose face is `ang` rad from the local wind (signed, (-pi, pi]) at comb factor `c`
+// (0..1): toward the wind's AXIS (a face and its reverse lie along one line) by a fraction c of the folded angle,
+// TAPERED to zero as the wind comes straight across the face. Folded alone, that blade had two equally near targets
+// and flipped by c x 180 degrees in one frame whenever the swirl veered the wind over its perpendicular (2026-09-28:
+// "blades snap to another rotation, then the wind continues from there"). A shader keeps no state to pick a side, so
+// the blade across the wind stays across (an unstable balance) and turns smoothly as the wind veers off it; within
+// WIND_COMB_TAPER rad of the perpendicular it turns part of the way. GrassWindState.comb_turn mirrors this.
+const float WIND_COMB_TAPER = 0.6;
+float wind_comb_turn(float ang, float c) {
+	if (ang > 1.5707963) {
+		ang -= 3.14159265;
+	} else if (ang < -1.5707963) {
+		ang += 3.14159265;
+	}
+	return ang * clamp(c, 0.0, 1.0) * smoothstep(0.0, WIND_COMB_TAPER, 1.5707963 - abs(ang));
+}
+
 // Oscillation angle (rad) for control point `lag` (1..3). Frequency falls with height;
 // phase from the blade seed AND the point's position along the blade (so it sways rather
 // than tilting rigidly) plus a ripple travelling downwind at sway_freq*TAU/wave_k m/s.

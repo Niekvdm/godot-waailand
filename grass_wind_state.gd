@@ -17,6 +17,9 @@ extends RefCounted
 const OFFSET_RATES := {"wind_scroll": 1.0, "wind_scroll2": 1.9, "wind_scroll_sw": 0.4}
 ## Below this the wind idles (m/s): a calm still stirs the grass.
 const CALM_M_S := 0.9
+## Within this angle (rad) of the wind coming straight across a blade, its comb turn tapers to zero
+## (grass_wind.gdshaderinc's WIND_COMB_TAPER; comb_turn).
+const COMB_TAPER := 0.6
 
 ## Where the wind blows toward (xz, normalised).
 var dir := Vector2(0.94, 0.33).normalized()
@@ -94,6 +97,17 @@ func anchor(cam_xz: Vector2) -> void:
 ## The ripple's phase at xz (the shader's travelling term, without TIME and the blade's own offsets).
 func ripple_term(xz: Vector2) -> float:
 	return -(xz - ripple_origin).dot(dir) * wave_k + ripple_phase
+
+
+## The COMB turn (rad) of a blade whose face is `ang` rad from the local wind (signed, -PI..PI), at comb factor `c`
+## (0..1): grass_wind.gdshaderinc's wind_comb_turn, mirrored for the tests. Toward the wind's axis, tapered to zero
+## as the wind comes straight across the face, so a veer over the perpendicular never flips a blade.
+static func comb_turn(ang: float, c: float) -> float:
+	if ang > PI * 0.5:
+		ang -= PI
+	elif ang < -PI * 0.5:
+		ang += PI
+	return ang * clampf(c, 0.0, 1.0) * smoothstep(0.0, COMB_TAPER, PI * 0.5 - absf(ang))
 
 
 ## The gust texture's offsets, by uniform name.

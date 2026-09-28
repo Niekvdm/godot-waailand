@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Wind: blades no longer snap to another angle as the wind veers. The comb (a blade turning its face into the local
+  wind) flipped a blade by up to 180 degrees in one frame when the swirled wind crossed its face's perpendicular; the
+  turn now tapers to zero there, so the blade turns smoothly (`wind_comb_turn`, `GrassWindState.comb_turn`).
+
 ## 1.5.0 (2026-09-26)
 
 Needs Terrain3D Extended 1.2 (the plugin says so and leaves the Grass workspace off on an older one).
