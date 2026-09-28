@@ -20,6 +20,10 @@ const CALM_M_S := 0.9
 ## Within this angle (rad) of the wind coming straight across a blade, its comb turn tapers to zero
 ## (grass_wind.gdshaderinc's WIND_COMB_TAPER; comb_turn).
 const COMB_TAPER := 0.6
+## The tuning set_tuning heads for and ease_tuning eases (for_speed's keys, the speed aside).
+const TUNING_KEYS := ["lean_base", "lean_gust", "sway_amp", "comb"]
+## How fast the tuning eases toward its target (1/s): ~0.3 s to settle.
+const TUNING_RATE := 8.0
 
 ## Where the wind blows toward (xz, normalised).
 var dir := Vector2(0.94, 0.33).normalized()
@@ -53,6 +57,8 @@ var comb := 0.90
 var ripple_origin := Vector2.ZERO
 ## The ripple's phase compensation for the origin's moves (anchor).
 var ripple_phase := 0.0
+## Where the lean/sway/comb tuning is headed: set_tuning writes it, ease_tuning chases it, calm() stills it too.
+var tuning_target := {"lean_base": 0.30, "lean_gust": 0.60, "sway_amp": 0.10, "comb": 0.90}
 
 
 ## How the grass answers a wind of `speed_m_s`: at a 4 m/s breeze exactly the defaults; lean and gust scale with
@@ -115,12 +121,29 @@ func offsets() -> Dictionary:
 	return {"wind_scroll": scroll, "wind_scroll2": scroll2, "wind_scroll_sw": scroll_sw}
 
 
-## Stills the grass at once: no lean, sway or comb (the gust field keeps moving).
+## Heads the lean/sway/comb tuning for `p` (for_speed's keys); `instant` lands it at once, else ease_tuning eases
+## toward it.
+func set_tuning(p: Dictionary, instant := false) -> void:
+	for k in TUNING_KEYS:
+		tuning_target[k] = float(p[k])
+		if instant:
+			set(k, tuning_target[k])
+
+
+## One frame of the tuning's low-pass toward its target: a feeder's per-frame flutter (the weather's wind speed)
+## becomes a smooth drift instead of stepping every blade to a new equilibrium mid-bend.
+func ease_tuning(dt: float) -> void:
+	var w := 1.0 - exp(-dt * TUNING_RATE)
+	for k in TUNING_KEYS:
+		set(k, lerpf(float(get(k)), float(tuning_target[k]), w))
+
+
+## Stills the grass at once and keeps it still until the next set_tuning: no lean, sway or comb (the gust field
+## keeps moving). The target stills too, or the easing would bring the wind back within a fraction of a second.
 func calm() -> void:
-	lean_base = 0.0
-	lean_gust = 0.0
-	sway_amp = 0.0
-	comb = 0.0
+	for k in TUNING_KEYS:
+		set(k, 0.0)
+		tuning_target[k] = 0.0
 
 
 ## Every wind uniform the shaders read, by name.
