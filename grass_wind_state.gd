@@ -70,6 +70,8 @@ var ripple_phase := 0.0
 var honami_vel := Vector2.ZERO
 ## TIME's rollover (s): the project's rendering/limits/time/time_rollover_secs, sent as waailand_time_rollover.
 var time_rollover := float(ProjectSettings.get_setting("rendering/limits/time/time_rollover_secs", 3600.0))
+## Counts calm() calls: the grass's memory of the air (GrassAirField) settles at once when it moves.
+var calm_serial := 0
 ## Where the lean/sway/comb tuning is headed: set_tuning writes it, ease_tuning chases it, calm() stills it too.
 var tuning_target := {"lean_base": 0.30, "lean_gust": 0.60, "sway_amp": 0.10, "comb": 0.90}
 
@@ -174,11 +176,13 @@ func ease_tuning(dt: float) -> void:
 
 
 ## Stills the grass at once and keeps it still until the next set_tuning: no lean, sway or comb (the gust field
-## keeps moving). The target stills too, or the easing would bring the wind back within a fraction of a second.
+## keeps moving). The target stills too, or the easing would bring the wind back within a fraction of a second; and
+## the grass's memory of the air settles (calm_serial), or it would rebound from the wind it had.
 func calm() -> void:
 	for k in TUNING_KEYS:
 		set(k, 0.0)
 		tuning_target[k] = 0.0
+	calm_serial += 1
 
 
 ## Every wind uniform the shaders read, by name.

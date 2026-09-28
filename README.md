@@ -274,13 +274,20 @@ reads as unpainted and says `pending`.
   `snapshot(origin: Vector2, window: float, pad: float) -> {segs: PackedFloat32Array, polys: Array}` (segments of
   `GrassRoads.SEG_STRIDE` floats: ax, az, bx, bz, half width, flags; polygons as `PackedVector2Array` rings). The road
   surface grows nothing and its verge grows the fallback species, live: a moved road needs no bake.
-- **Downwash.** Up to two rotors lay the blades and decorations over about their roots. The wash's profile is
+- **Wind and downwash.** The wind and up to two rotors' downwash are one flow of air (`add_wash`'s intensity 1 is a
+  25 m/s wake at the ground): each species leans with the flow's speed by its wind response, saturating short of
+  flat, faces combed along the flow; the column under a rotor presses the grass down about its roots, and the wash
+  buffets it. Fine gusts run through the field at the wind's own speed. The wash's profile is
   `grass_downwash.gdshaderinc`; your other shaders (trees, water) can include it so everything moves in step.
+- **The grass remembers the air** (`air_memory`, on by default): a gust or a rotor lays it with a lag, a released patch
+  rebounds, and grass a hovering rotor held flat creeps back up over seconds (`GrassAirField`, a spring per patch
+  around the camera). A steady wind looks the same with it off.
 
 ## For tools and tests
 
-`wind` (`GrassWindState`) and `interaction` (`GrassInteractionField`) are public objects, the advanced layer: a tool
-may read their uniforms or still the grass at once with `wind.calm()`. The members whose doc comments begin "For
+`wind` (`GrassWindState`), `interaction` (`GrassInteractionField`) and `air` (`GrassAirField`) are public objects, the
+advanced layer: a tool may read their uniforms or state, or still the grass at once with `wind.calm()` (the air's
+memory settles with it). The members whose doc comments begin "For
 tools and tests" (`frozen`, `force_bin`, `force_morph`, `force_yaw`, `force_editor`, `all_grounds`, `types`,
 `decorations`, `farfield`, `step()`, `readback()`, `decode()` and others) exist for tools, tests and debugging; a game
 has no use for them.

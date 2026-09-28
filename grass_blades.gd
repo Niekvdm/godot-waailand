@@ -177,6 +177,15 @@ const DEFAULT_SWELL := {"dir": Vector2(0.0, 1.0), "height": 0.0, "k": 0.037, "om
 ## veering gust does not flick the blades. Live.
 @export_range(0.05, 4.0, 0.05) var wind_veer_rate := 0.4
 
+## The grass remembers the air (GrassAirField): a gust or a rotor's wash lays it with a
+## lag, a released patch rebounds past upright once, and grass a hovering rotor held
+## flat creeps back up over seconds. Off: every plant leans to the air it stands in
+## now, at once. Live.
+@export var air_memory := true:
+	set(v):
+		air_memory = v
+		air.enabled = v
+
 ## How far a plant floating on inland water bobs up and down (m); plants on the sea
 ## move with its swell instead. Live.
 @export_range(0.0, 0.2, 0.005, "suffix:m") var water_bob_m := 0.01
@@ -235,6 +244,14 @@ var _season_dirty := true
 ## The trail field the kernels read (crush and push; add_crush and add_push stamp it). The advanced layer: tools
 ## may read its state.
 var interaction := GrassInteractionField.new()
+## The grass's memory of the air (air_memory): a spring per patch around the camera whose lag, rebound and matting the
+## shaders add to their stateless lean. The advanced layer: tools may read it (readback's "air").
+var air := GrassAirField.new()
+var _air_tex_state: Texture2DRD
+var _air_tex_eq: Texture2DRD
+var _air_bound := false
+var _wash_frame := PackedVector4Array()     # the washes the shaders got last (the air field's too)
+var _air_calm_seen := 0                     # the wind's calm_serial the air field last settled for
 ## For tools and tests: the blade material (grass_blade.gdshader).
 var material: ShaderMaterial = null
 ## The wind state the shaders read (set_wind eases it). The advanced layer: tools may read its uniforms, or calm
@@ -430,6 +447,7 @@ func colour_texture() -> Texture2DArray:
 func reload_species() -> void:
 	if _live:
 		_live = false
+		_unbind_air()
 		RenderingServer.call_on_render_thread(_rt_free.bind(decorations))
 	_rebuild_species()
 	if is_inside_tree():
@@ -779,6 +797,7 @@ func apply_editor_wind() -> void:
 ## so a test that sets the wash uniforms itself keeps them.
 func _flush_washes() -> void:
 	if _washes.is_empty() and _wash_sent == 0:
+		_wash_frame = PackedVector4Array()
 		return
 	var keep: Array[Vector4] = _washes.duplicate()
 	if keep.size() > MAX_WASH:
@@ -789,7 +808,8 @@ func _flush_washes() -> void:
 		keep.clear()
 		for i in top:
 			keep.append(_washes[i])
-	set_uniform(&"wash", PackedVector4Array(keep))
+	_wash_frame = PackedVector4Array(keep)
+	set_uniform(&"wash", _wash_frame)
 	set_uniform(&"wash_count", keep.size())
 	_wash_sent = keep.size()
 	_washes.clear()
@@ -945,6 +965,7 @@ func _notification(what: int) -> void:
 func _exit_tree() -> void:
 	farfield.unbind()
 	_live = false
+	_unbind_air()
 	# The streams bound now: re-entry may replace `decorations` before the render thread runs this.
 	RenderingServer.call_on_render_thread(_rt_free.bind(decorations))
 	# Back in the tree (the editor's scene tabs take the edited scene out and put it back), _ready runs again
@@ -1103,6 +1124,10 @@ func _dispatch(dt: float) -> void:
 	_clock = fmod(_clock + dt, 3600.0)
 	var c := view_of(cam).origin
 	interaction.frame_begin(c, dt)
+	if wind.calm_serial != _air_calm_seen:
+		_air_calm_seen = wind.calm_serial
+		air.reset()
+	air.frame_begin(c, dt)
 	var tsize := TILE_CELLS * grid_pitch
 	# A blade shrinks over grow_m of travel CENTRED on its threshold, so blades live out to
 	# R + grow_m/2. The grid must reach that far on every side, or the tile rounding (which
@@ -1169,7 +1194,9 @@ func _dispatch(dt: float) -> void:
 		types_b = _types_bytes
 	var field := interaction.payload()
 	var us4 := Time.get_ticks_usec() if debug_timing else 0
-	RenderingServer.call_on_render_thread(_rt_frame.bind(params, push, types_b, types_gen, field, _tiles, deco, ground))
+	var air_p := air.payload(wind.uniforms(), _wash_frame) if air_memory else {}
+	RenderingServer.call_on_render_thread(_rt_frame.bind(params, push, types_b, types_gen, field, _tiles, deco, ground,
+		air_p))
 	if debug_timing:
 		var us5 := Time.get_ticks_usec()
 		cpu_split = {"setup": us1 - us0, "material": us2 - us1, "deco": us3 - us2,
@@ -1205,6 +1232,8 @@ func _update_material(cam: Camera3D, dt: float) -> void:
 	var u := wind.uniforms()
 	for k in u:
 		_send(k, u[k], true)
+	_bind_air()
+	_send(&"air_window", air.window() if _air_bound and air_memory else Vector4.ZERO, true)
 
 
 ## A uniform to the blade material (and the flowers' when `decos`), only when its value changed.
@@ -1216,6 +1245,31 @@ func _send(k: StringName, v, decos: bool) -> void:
 	if decos:
 		for m in decorations.materials:
 			m.set_shader_parameter(k, v)
+
+
+## The air field's textures on the blade and flower materials, once the render thread made them (air_state, air_eq).
+func _bind_air() -> void:
+	if _air_bound or not air.state_rid().is_valid() or not air.eq_rid().is_valid():
+		return
+	if _air_tex_state == null:
+		_air_tex_state = Texture2DRD.new()
+		_air_tex_eq = Texture2DRD.new()
+	_air_tex_state.texture_rd_rid = air.state_rid()
+	_air_tex_eq.texture_rd_rid = air.eq_rid()
+	set_uniform(&"air_state", _air_tex_state)
+	set_uniform(&"air_eq", _air_tex_eq)
+	_air_bound = true
+
+
+## Before the render thread frees the air field: the shaders stop reading it, and the wrappers let go of its textures.
+func _unbind_air() -> void:
+	if not _air_bound:
+		return
+	_sent.erase(&"air_window")
+	set_uniform(&"air_window", Vector4.ZERO)
+	_air_tex_state.texture_rd_rid = RID()
+	_air_tex_eq.texture_rd_rid = RID()
+	_air_bound = false
 
 
 ## Sets a uniform on the blade material and on every decoration material.
@@ -1407,6 +1461,7 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 	ss.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
 	_sampler = rd.sampler_create(ss)
 	_field_tex = interaction.rt_create(rd)
+	air.rt_create(rd, RenderingServer.texture_get_rd_texture(_gust_tex.get_rid()) if _gust_tex != null else RID())
 	_region_buf = rd.storage_buffer_create(REGION_MAP_BYTES)
 	_road_idx = rd.storage_buffer_create(GrassRoads.MAX_IDS * 4)
 	_road_shapes = rd.storage_buffer_create(GrassRoads.MAX_SHAPES * 3 * 16)
@@ -1489,7 +1544,7 @@ func _rt_bind_ground(rd: RenderingDevice, h_rs: RID, g_rs: RID, rut_rs: RID, c_r
 
 
 func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedByteArray, types_gen: int,
-		field_payload: Dictionary, tiles: int, deco: Dictionary, ground: Dictionary) -> void:
+		field_payload: Dictionary, tiles: int, deco: Dictionary, ground: Dictionary, air_payload := {}) -> void:
 	var rd := _rd
 	if rd == null or not _place_pipe.is_valid():
 		return
@@ -1519,6 +1574,7 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 		rd.buffer_update(_types_buf, 0, types_b.size(), types_b)
 		_types_up.uploaded(types_gen)
 	interaction.rt_prepare(rd, field_payload)
+	air.rt_prepare(rd, air_payload)
 	decorations.rt_prepare(rd, deco)
 	if debug_timing:
 		_read_timing(rd)
@@ -1560,6 +1616,8 @@ func _rt_frame(params: PackedByteArray, push: PackedByteArray, types_b: PackedBy
 	var cl := rd.compute_list_begin()
 	if not debug_skip_interaction:
 		interaction.rt_dispatch(rd, cl)
+	if not air_payload.is_empty():
+		air.rt_dispatch(rd, cl)
 	rd.compute_list_bind_compute_pipeline(cl, _place_pipe)
 	rd.compute_list_bind_uniform_set(cl, _place_set, 0)
 	rd.compute_list_set_push_constant(cl, push, push.size())
@@ -1615,6 +1673,8 @@ func _rt_readback(box: Dictionary) -> void:
 			if n > 0 else PackedFloat32Array())
 		box["cmd_" + keys[i]] = rd.buffer_get_data(_cmd[i]).to_int32_array()
 	box["field"] = interaction.rt_read(rd)
+	if air.state_rid().is_valid():
+		box["air"] = air.rt_read(rd)
 	decorations.rt_readback(rd, box)
 	stats = st
 
@@ -1666,6 +1726,7 @@ func _rt_free(p_decorations: DecorationStreams = null) -> void:
 		if (r as RID).is_valid():
 			rd.free_rid(r)
 	interaction.rt_free(rd)
+	air.rt_free(rd)
 	# Exit reports 3 StorageBuffers leaked per GrassBlades, one per MultiMesh: what the engine's
 	# command-buffer leak on MultiMesh free would give (godotengine/godot#108148), though not
 	# proven to be it.

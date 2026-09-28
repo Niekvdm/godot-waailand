@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bhydu7hofbnf4"
+path="res://.godot/imported/air_step.glsl-c60e3b442829add3572893f0911f0eb4.res"
+
+[deps]
+
+source_file="res://addons/waailand/air_step.glsl"
+dest_files=["res://.godot/imported/air_step.glsl-c60e3b442829add3572893f0911f0eb4.res"]
+
+[params]
+

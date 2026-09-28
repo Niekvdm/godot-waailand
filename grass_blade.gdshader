@@ -21,6 +21,7 @@ shader_type spatial;
 render_mode cull_disabled, world_vertex_coords, depth_draw_opaque;
 #include "res://addons/waailand/grass_wind.gdshaderinc"
 #include "res://addons/waailand/grass_wash.gdshaderinc"   // the two-slot downwash (a game can share it with its other surfaces)
+#include "res://addons/waailand/grass_air.gdshaderinc"    // the grass's memory of the air (GrassAirField)
 #include "res://addons/waailand/grass_palette.gdshaderinc"
 #include "res://addons/waailand/grass_handoff.gdshaderinc"
 #include "res://addons/waailand/grass_ground.gdshaderinc"   // the terrain's colour under the blade
@@ -258,7 +259,9 @@ void vertex() {
 		// The lean moves toward the ROOT as the load grows: a breeze curves a blade along its length, a gale or a
 		// wall jet folds it at the base (a load along a cantilever bends it most at the root). hb 0: a third, two
 		// thirds and all of the angle at the control points; hb 1: all of it at each, a hinge.
-		vec2 lean_v = wind_lean_vec(u, resp) * free_;
+		// Plus the grass's MEMORY of the air (air_dev, GrassAirField): the lag behind a rising gust, the rebound when
+		// it falls away, a patch a rotor held flat creeping back up. Zero in a steady air.
+		vec2 lean_v = (wind_lean_vec(u, resp) + air_dev(root.xz) * resp) * free_;
 		hb = smoothstep(0.45, 1.2, length(lean_v));
 		flow_dir = udir;
 		up_k = smoothstep(0.3, 0.9, length(lean_v));

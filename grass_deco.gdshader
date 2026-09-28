@@ -12,6 +12,7 @@ shader_type spatial;
 render_mode cull_disabled, world_vertex_coords, depth_draw_opaque;
 #include "res://addons/waailand/grass_wind.gdshaderinc"
 #include "res://addons/waailand/grass_wash.gdshaderinc"   // the two-slot downwash (a game can share it with its other surfaces)
+#include "res://addons/waailand/grass_air.gdshaderinc"    // the grass's memory of the air (GrassAirField)
 #include "res://addons/waailand/grass_palette.gdshaderinc"
 
 uniform vec3 pal[6];                  // today's palette (linear; DecorationStreams.set_day)
@@ -85,7 +86,7 @@ void vertex() {
 	float air = clamp(length(u) / 4.0, 0.0, 2.0);
 	float fl = flutter * 0.15 * air * sin(TIME * TAU * rollover_hz(7.0 / TAU) + seed * 20.0 + w * 3.0) * w * w;
 	vec2 bf = grass_wash_buffet(seed, lag, TIME) * (wash_s * hinge_response);
-	vec2 bend = wind_lean_vec(u, wind_response * 0.6) * free_
+	vec2 bend = (wind_lean_vec(u, wind_response * 0.6) + air_dev(root.xz) * (wind_response * 0.6 * hinge_response)) * free_
 			+ (wdir * (sw.x + fl) + vec2(-wdir.y, wdir.x) * sw.y) * (free_ * wind_response)
 			+ (wash_d * bf.x + vec2(-wash_d.y, wash_d.x) * bf.y) * free_;
 	float bl = length(bend);

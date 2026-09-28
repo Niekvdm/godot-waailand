@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The grass remembers the air (`air_memory`, on by default; `GrassAirField`, `air_step.glsl`,
+  `grass_air.gdshaderinc`): a camera-centred window of springs, one per half-metre patch, integrated each frame toward
+  the air's equilibrium lean. The shaders add only its deviation, so a steady wind looks as before; a gust or a
+  rotor now lays the grass with a lag, a released patch rebounds past upright once, and grass a hovering rotor held
+  flat (matted) creeps back up over a few seconds. `wind.calm()` settles it. `readback()` returns it as `"air"`.
 - The wind and a rotor's downwash are one flow of air. The wall jet joins the wind (m/s), so each species leans by
   its own wind response (a rigid one stands, a meadow lies over), faces comb outward along the jet, and upwind of a
   rotor the wind and the wash no longer bend a blade two ways. The lean saturates (a soft minimum toward 1.35 rad):
