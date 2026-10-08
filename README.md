@@ -306,7 +306,9 @@ has no use for them.
 - **Clumps.** Blades gather into Voronoi clumps that share height, facing and colour, which is what makes a field
   read as tussocks instead of noise.
 - **The grass maps.** Painting writes one RGBA8 image per terrain region (density, species override, height, force),
-  stored beside Terrain3D's own region files and read by the compute on the GPU.
+  stored beside Terrain3D's own region files and read by the compute on the GPU. The GPU holds a layer per map that
+  exists, not per terrain region: a region without a map costs nothing (the ground decides what grows there), and a
+  terrain without any (the water maps of a world without painted water, say) holds a 1x1 placeholder.
 - **Further reading.** The blade design follows Sucker Punch's GDC talk "Procedural Grass in Ghost of Tsushima".
 
 ## Tests

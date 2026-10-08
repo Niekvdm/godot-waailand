@@ -25,7 +25,8 @@ const WIND_KEYS := [&"wind_dir", &"wind_scroll", &"wind_scroll2", &"wind_scroll_
 var _mat: Object = null
 var _rid := RID()
 var _enabled := false
-var direct := false             # the editor: RenderingServer writes only, never the saved table (set before bind)
+var _slot_tex: ImageTexture = null   # slot_texture()
+var direct := false            # the editor: RenderingServer writes only, never the saved table (set before bind)
 
 
 ## Bind to `terrain`'s material. True when it is new (the caller pushes the static inputs).
@@ -79,9 +80,10 @@ func is_enabled() -> bool:
 
 
 ## What changes rarely: the grain bake (GrassFarGrain.load_baked; {} runs without grain), the terrain
-## rule by texture id, each type's blade height, the gust texture.
+## rule by texture id, each type's blade height, the gust texture, the grass map array and its slot table
+## (GrassMaps.slot_table: the shader reads a terrain layer's map through it).
 func push_static(grain: Dictionary, allow: PackedFloat32Array, heights: PackedFloat32Array, gust: Texture2D,
-		slots := PackedVector4Array(), maps: Texture2DArray = null) -> void:
+		slots := PackedVector4Array(), maps: Texture2DArray = null, map_slots := PackedInt32Array()) -> void:
 	set_param(&"grass_allow", allow)
 	if not slots.is_empty():
 		set_param(&"far_slot", slots)       # each texture id's mix (GrassTerrainGrowth.far_slot_params)
@@ -95,7 +97,28 @@ func push_static(grain: Dictionary, allow: PackedFloat32Array, heights: PackedFl
 		set_param(&"far_grain_std", grain["std"])
 		set_param(&"far_grain_m", float(grain.get("tile_m", GrassFarGrain.TILE_M)))
 	if maps != null:
-		set_param(&"grass_maps", maps)      # GrassMaps: the grass map array
+		set_param(&"grass_maps", maps)      # GrassMaps: the grass map array, a layer per map
+		set_param(&"grass_map_slots", slot_texture(map_slots))
+
+
+## GrassMaps.slot_table() as the terrain shader reads it (grass_map_slots): one RF texel per terrain layer, 1 + its map's
+## layer, 0 where its region has no map. Updated in place: its RID stays the one the material holds.
+func slot_texture(table: PackedInt32Array) -> ImageTexture:
+	var img := slot_image(table)
+	if _slot_tex == null:
+		_slot_tex = ImageTexture.create_from_image(img)
+	else:
+		_slot_tex.update(img)
+	return _slot_tex
+
+
+## The slot table as GrassMaps.MAP_CELLS x 1 RF texels (exact integers), padded with 0 (no map) or cut to that length.
+static func slot_image(table: PackedInt32Array) -> Image:
+	var f := PackedFloat32Array()
+	f.resize(GrassMaps.MAP_CELLS)
+	for i in mini(table.size(), GrassMaps.MAP_CELLS):
+		f[i] = float(table[i])
+	return Image.create_from_data(GrassMaps.MAP_CELLS, 1, false, Image.FORMAT_RF, f.to_byte_array())
 
 
 ## Every frame: the wind (the gust bands follow it), the sun, and where the blades fade.

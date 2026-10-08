@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The grass and water map arrays cost memory by the maps that exist, not by the terrain's layers. `GrassMaps` holds a
+  layer per map and a slot table (`slot_table()`: terrain layer to 1 + its map's layer, 0 for none); the compute
+  (binding 9, after the region map) and the far carpet (`grass_map_slots`) read the maps through it, and a region
+  without a map reads NEUTRAL without a fetch. A folder without maps holds a 1x1x1 array; one with maps gets a layer
+  per map file, at most the terrain's layer count, when the first map lands. A streamed region landing or leaving
+  reallocates nothing and makes no NEUTRAL image (each landing used to upload a fresh region-sized NEUTRAL image to
+  both arrays). A region painted in the editor gets its layer when painted, the array doubling when full. On a
+  streaming terrain of 49 slots at 1024² with three maps and no water maps, the two arrays drop from 392 MiB to
+  12 MiB. A terrain shader that includes `grass_far.gdshaderinc` needs no change. New: `GrassMaps.map_layer_of`,
+  `capacity`, `slot_table`, `table_version`, `MAP_CELLS`; `GrassBlades.region_bytes`; `GrassFarField.slot_texture`,
+  `slot_image`; `GrassFarField.push_static` takes the table after the array.
 - The grass remembers the air (`air_memory`, on by default; `GrassAirField`, `air_step.glsl`,
   `grass_air.gdshaderinc`): a camera-centred window of springs, one per half-metre patch, integrated each frame toward
   the air's equilibrium lean. The shaders add only its deviation, so a steady wind looks as before; a gust or a

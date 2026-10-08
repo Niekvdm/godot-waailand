@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 // grass_place_common.glsli: shared by blade_place.glsl and deco_place.glsl.
 // The bindings both kernels share (0 params, 1 types, 2 Terrain3D heights, 3 the grass maps,
-// 8 interaction field, 9 region map, 10-11 roads, 12 ruts, 13 control maps, 14 water maps, 15-16 water sources), the params
+// 8 interaction field, 9 region map + the maps' slot tables, 10-11 roads, 12 ruts, 13 control maps, 14 water maps,
+// 15-16 water sources), the params
 // layout (mirrored by GrassBlades._params_bytes()), and the placement
 // primitives, so blades and decorations cannot disagree about where a clump is or which
 // type grows where. Kernel-specific bindings (4-7) and push constants stay in each kernel.
@@ -11,14 +12,16 @@
 layout(set = 0, binding = 0, std430) restrict readonly buffer Params { vec4 v[]; } P;
 layout(set = 0, binding = 1, std430) restrict readonly buffer Types { vec4 v[]; } T;
 layout(set = 0, binding = 2) uniform sampler2DArray height_maps;   // Terrain3D: R32F heights
-layout(set = 0, binding = 3) uniform sampler2DArray grass_maps;    // the grass maps (GrassMaps): RGBA8
+layout(set = 0, binding = 3) uniform sampler2DArray grass_maps;    // the grass maps (GrassMaps): RGBA8, a layer per map
 layout(set = 0, binding = 8, rgba16f) uniform restrict readonly image2D field;
-layout(set = 0, binding = 9, std430) restrict readonly buffer RegionMap { int m[]; } RM;   // Terrain3D region map
+// Terrain3D's region map (MAP_CELLS ints), then GrassMaps' slot tables for the grass and the water maps (MAP_CELLS each):
+// GrassBlades.region_bytes. Read the maps through grass_texel / water_texel, never by the terrain layer.
+layout(set = 0, binding = 9, std430) restrict readonly buffer RegionMap { int m[]; } RM;
 layout(set = 0, binding = 10, std430) restrict readonly buffer RoadIds { uint v[]; } RI;         // GrassRoads: bin offsets, ids
 layout(set = 0, binding = 11, std430) restrict readonly buffer RoadShapes { vec4 v[]; } RSH;     // GrassRoads: shapes, vertices
 layout(set = 0, binding = 12) uniform sampler2D rut_map;              // set_ruts: R depression (m)
 layout(set = 0, binding = 13) uniform sampler2DArray control_maps;   // Terrain3D control words (R32F bits): what the terrain is painted with
-layout(set = 0, binding = 14) uniform sampler2DArray water_maps;    // the surface layer's grass maps (GrassMaps, <folder>_water): RGBA8
+layout(set = 0, binding = 14) uniform sampler2DArray water_maps;    // the surface layer's grass maps (GrassMaps, <folder>_water): RGBA8, a layer per map
 layout(set = 0, binding = 15, std430) restrict readonly buffer WaterIds { uint v[]; } WI;       // GrassWater: bin offsets, ids
 layout(set = 0, binding = 16, std430) restrict readonly buffer WaterShapes { vec4 v[]; } WSH;   // GrassWater: polygons, vertices
 
@@ -115,6 +118,25 @@ ivec3 vertex_texel(ivec2 v) {
 		return ivec3(0, 0, -1);
 	}
 	return ivec3(v - loc * T_REGION_SIZE, RM.m[p.y * T_MAP_SIZE + p.x] - 1);
+}
+
+// GrassMaps' slot tables (GrassMaps.slot_table) after the region map: RM.m[GRASS_SLOTS + z] and RM.m[WATER_SLOTS + z] are
+// 1 + the layer of the grass / water map array holding terrain layer z's region, 0 where that region has no map.
+#define MAP_CELLS   1024                   // GrassMaps.MAP_CELLS: the region map's cells, every layer it can name
+#define GRASS_SLOTS MAP_CELLS
+#define WATER_SLOTS (2 * MAP_CELLS)
+const vec4 MAP_NEUTRAL = vec4(128.0 / 255.0, 0.0, 128.0 / 255.0, 1.0);   // GrassMaps.NEUTRAL: x1, the ground decides
+
+// The grass map texel at vertex_texel's t (t.z the terrain layer): NEUTRAL where the region has no map (nothing fetched).
+vec4 grass_texel(ivec3 t) {
+	int l = (t.z >= 0 && t.z < MAP_CELLS) ? RM.m[GRASS_SLOTS + t.z] - 1 : -1;
+	return l < 0 ? MAP_NEUTRAL : texelFetch(grass_maps, ivec3(t.xy, l), 0);
+}
+
+// The water map texel at vertex_texel's t, likewise.
+vec4 water_texel(ivec3 t) {
+	int l = (t.z >= 0 && t.z < MAP_CELLS) ? RM.m[WATER_SLOTS + t.z] - 1 : -1;
+	return l < 0 ? MAP_NEUTRAL : texelFetch(water_maps, ivec3(t.xy, l), 0);
 }
 
 // Ground height: bilinear between the 4 vertices around xz (Terrain3DData.get_height's rule). NaN
@@ -298,7 +320,7 @@ float ground_allowance(vec2 pos) {
 		if (t.z < 0) {
 			return 0.0;
 		}
-		a[i] = corner_allow(floatBitsToUint(texelFetch(control_maps, t, 0).r), texelFetch(grass_maps, t, 0));
+		a[i] = corner_allow(floatBitsToUint(texelFetch(control_maps, t, 0).r), grass_texel(t));
 	}
 	return dot(a, vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y));
 }
@@ -368,7 +390,7 @@ bool place_at(vec2 pos, float u, out vec4 pl, out int ty) {
 			ty = 0;
 			return false;
 		}
-		c[i] = texelFetch(grass_maps, t, 0);
+		c[i] = grass_texel(t);
 		cw[i] = floatBitsToUint(texelFetch(control_maps, t, 0).r);
 		a[i] = corner_allow(cw[i], c[i]);
 		hs[i] = texelFetch(height_maps, t, 0).r;
@@ -482,7 +504,7 @@ bool surface_at(vec2 pos, float u, out vec4 pl, out int ty, out vec4 wt) {
 		if (t.z < 0) {
 			return false;
 		}
-		c[i] = texelFetch(water_maps, t, 0);
+		c[i] = water_texel(t);
 	}
 	pl = c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w;
 	int k = u < w.x ? 0 : (u < w.x + w.y ? 1 : (u < w.x + w.y + w.z ? 2 : 3));

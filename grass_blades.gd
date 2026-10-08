@@ -327,9 +327,12 @@ var _height_type := 0               # Terrain3DRegion.TYPE_HEIGHT, looked up (no
 var _ground_dirty := true
 var _colour_rids := [RID(), RID()]      # the control and albedo arrays last pushed to the blade material
 var _region_map_dirty := true
+var _tables_sent := Vector2i(-1, -1)    # the grass and water maps' table_version() last sent with the region map
 var _region_buf := RID()
 ## The region map's size in bytes (32 x 32 ints).
 const REGION_MAP_BYTES := 32 * 32 * 4
+## Binding 9 (region_bytes): the region map, then the grass maps' and the water maps' slot tables.
+const REGION_BUF_BYTES := REGION_MAP_BYTES + 2 * GrassMaps.MAP_CELLS * 4
 ## The live roads (GrassRoads): the kernels keep grass off them and grow verges beside them.
 var roads := GrassRoads.new()
 ## The live water sources (GrassWater): the species measure their depth below the highest surface over them, and the
@@ -1056,7 +1059,8 @@ func _far_tick() -> void:
 	if _far_dirty:
 		farfield.set_param(&"far_all_grounds", all_grounds)
 		farfield.push_static(_far_grain, _allow, GrassFarField.type_heights(types), _gust_tex,
-			GrassTerrainGrowth.far_slot_params(_slot_mixes, types, _far_grain), grass_maps.texture())
+			GrassTerrainGrowth.far_slot_params(_slot_mixes, types, _far_grain), grass_maps.texture(),
+			grass_maps.slot_table())
 		farfield.set_overlay(_overlay)
 		_far_dirty = false
 	var on := (far_field and grass_visible and _live) or _overlay != GrassOverlay.Mode.OFF
@@ -1154,9 +1158,11 @@ func _dispatch(dt: float) -> void:
 	water_maps.poll()
 	var ground := {"h": data.get_height_maps_rid(), "g": grass_maps.rid(), "rut": _rut_tex,
 		"c": data.get_control_maps_rid(), "w": water_maps.rid()}
-	if _region_map_dirty:
-		ground["map"] = (data.get_region_map() as PackedInt32Array).to_byte_array()
+	var tables := Vector2i(grass_maps.table_version(), water_maps.table_version())
+	if _region_map_dirty or tables != _tables_sent:
+		ground["map"] = region_bytes(data.get_region_map(), grass_maps.slot_table(), water_maps.slot_table())
 		_region_map_dirty = false
+		_tables_sent = tables
 	var wo := roads.window_for(Vector2(c.x, c.z))
 	if _road_dirty or wo != _road_origin:
 		var pk := roads.pack(wo)
@@ -1462,7 +1468,7 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 	_sampler = rd.sampler_create(ss)
 	_field_tex = interaction.rt_create(rd)
 	air.rt_create(rd, RenderingServer.texture_get_rd_texture(_gust_tex.get_rid()) if _gust_tex != null else RID())
-	_region_buf = rd.storage_buffer_create(REGION_MAP_BYTES)
+	_region_buf = rd.storage_buffer_create(REGION_BUF_BYTES)
 	_road_idx = rd.storage_buffer_create(GrassRoads.MAX_IDS * 4)
 	_road_shapes = rd.storage_buffer_create(GrassRoads.MAX_SHAPES * 3 * 16)
 	_water_idx = rd.storage_buffer_create(GrassWater.MAX_IDS * 4)
@@ -1501,8 +1507,21 @@ func _rt_init(place_f: RDShaderFile, fin_f: RDShaderFile, scenario: RID) -> void
 		set_grass_visible(false)    # new instances start visible: a hidden field stays hidden on re-entry
 
 
-## Bindings 2 (heights), 3 (grass maps), 9 (region map), 10-11 (roads), 12 (ruts), 13 (control maps), 14 (the water
-## maps), 15-16 (water sources): shared by the blade and decoration sets.
+## Binding 9's bytes: Terrain3D's region map (GrassMaps.MAP_CELLS ints), then the grass maps' and the water maps'
+## slot tables (GrassMaps.slot_table: terrain layer -> 1 + its map's layer, 0 for none), each padded or cut to MAP_CELLS.
+## The kernels read a map texel through its table (grass_place_common.glsli grass_texel, water_texel).
+static func region_bytes(p_map: PackedInt32Array, p_grass: PackedInt32Array, p_water: PackedInt32Array) -> PackedByteArray:
+	var out := p_map.slice(0, GrassMaps.MAP_CELLS)
+	out.resize(GrassMaps.MAP_CELLS)
+	for t in [p_grass, p_water]:
+		var part: PackedInt32Array = (t as PackedInt32Array).slice(0, GrassMaps.MAP_CELLS)
+		part.resize(GrassMaps.MAP_CELLS)
+		out.append_array(part)
+	return out.to_byte_array()
+
+
+## Bindings 2 (heights), 3 (grass maps), 9 (region map + the maps' slot tables), 10-11 (roads), 12 (ruts), 13 (control
+## maps), 14 (the water maps), 15-16 (water sources): shared by the blade and decoration sets.
 func _ground_uniforms(h_rd: RID, g_rd: RID, rut_rd: RID, c_rd: RID, w_rd: RID) -> Array[RDUniform]:
 	var out: Array[RDUniform] = [_sampled(2, h_rd), _sampled(3, g_rd), _storage(9, _region_buf),
 		_storage(10, _road_idx), _storage(11, _road_shapes), _sampled(12, rut_rd), _sampled(13, c_rd),

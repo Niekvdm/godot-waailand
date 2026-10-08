@@ -4,15 +4,23 @@
 class_name GrassMaps
 extends RefCounted
 ## The grass maps: one RGBA8 image per Terrain3D region (GrassMapCodec), stored beside the region files
-## (<data_directory>/<folder>/<Terrain3DUtil.location_to_filename(loc)>) and held here as
-## one Texture2DArray whose layers follow Terrain3D's own (the region map's value - 1, with or without streaming): the
-## blade and decoration compute and the far carpet read it. A region without a file grows the ground's grass (NEUTRAL).
+## (<data_directory>/<folder>/<Terrain3DUtil.location_to_filename(loc)>) and held here as one Texture2DArray with a
+## layer per MAP, not per terrain layer: slot_table() says which of its layers holds the region in each of Terrain3D's
+## layers (the region map's value - 1, with or without streaming). The blade and decoration compute and the far carpet
+## read the array through that table. A region without a map grows the ground's grass (NEUTRAL): its entry is 0 and the
+## shaders use the constant, fetching nothing, so a terrain with no map holds a 1x1x1 array.
+## The array's size: as many layers as maps can be resident at once (the map files on disk, at most the terrain's layer
+## count), allocated when the first map lands. A landing takes a free layer and a region leaving gives its layer back,
+## so in the game a landing never reallocates. Only a map that was not on disk at the bind (painted in the editor,
+## adopted) can find no free layer: the array then doubles, its maps sent again.
 ## Owned by GrassBlades. The grass keeps its maps itself, so it runs on any Terrain3D.
 
-signal changed                     # the texture was rebuilt, or a layer updated
+signal changed                     # the texture was rebuilt, a layer updated, or slot_table() changed
 
 const NEUTRAL := Color(128.0 / 255.0, 0.0, 128.0 / 255.0, 1.0)   # x1, the ground decides, the authored height, not forced
 const MAP_SIZE := 32               # Terrain3D's region map: MAP_SIZE^2 cells (REGION_MAP_SIZE)
+## slot_table()'s length: every layer a terrain's region map can name (and the shaders' table length).
+const MAP_CELLS := MAP_SIZE * MAP_SIZE
 const QUERY_REGIONS := 8           # region maps kept for GrassBlades.sample() (the game holds none of its own)
 
 var folder := "grass"
@@ -22,8 +30,19 @@ var errors: PackedStringArray = []
 var sync_loads := 0                # maps decoded on the main thread: a streamed region's never is
 var _terrain: Object = null
 var _tex: Texture2DArray = null
-var _layers: Array = []            # layer -> region location, or null (an unused streaming slot)
+var _retired: Texture2DArray = null   # the array _build replaced, kept to the next poll() (GrassBlades re-points to the new one)
+var _tex_size := 0                 # the region size _tex holds maps of (0: the 1x1x1 placeholder)
+var _layers: Array = []            # terrain layer -> region location, or null (an unused streaming slot)
+var _map_layer := {}               # location -> its layer of _tex: the resident regions that have a map
+var _free: Array[int] = []         # layers of _tex no region holds (popped from the back: the lowest first)
+var _cap := 0                      # map layers in _tex (0: the placeholder, which no slot points at)
+var _want_cap := 0                 # the layers the first map's array gets: the map files on disk, at most the terrain's
+var _table_gen := 0                # bumped whenever slot_table() changes
+var _table := PackedInt32Array()   # slot_table() as last built, at _table_built
+var _table_built := -1
+var _warned_layers := false
 var _images := {}                  # location -> Image (keep_images; adopted ones always)
+var _mapped := {}                  # location -> true: its held Image is a map (a file's, adopted, painted), not a stand-in
 var _adopted := {}                 # location -> true: given by adopt(), never loaded from a file
 var _size := 0
 var _pending := {}                 # location -> [task id, [Image]]: a streamed region's map, loading on a worker thread
@@ -57,8 +76,38 @@ func layers() -> Array:
 	return _layers.duplicate()
 
 
+## The terrain layer (slot) a region is resident in, -1 where it is not.
 func layer_of(p_loc: Vector2i) -> int:
 	return _layers.find(p_loc)
+
+
+## The layer of texture() holding a region's map, -1 where it has none or is not resident (slot_table() - 1).
+func map_layer_of(p_loc: Vector2i) -> int:
+	return int(_map_layer.get(p_loc, -1))
+
+
+## The map layers texture() has room for (0: the 1x1x1 placeholder: no map resident yet, or none at all).
+func capacity() -> int:
+	return _cap
+
+
+## Bumped whenever slot_table() changes: a region landing or leaving, a map given a layer, the array rebuilt.
+func table_version() -> int:
+	return _table_gen
+
+
+## Terrain3D's layer z -> 1 + the layer of texture() holding its region's map, 0 where that region has no map (the
+## shaders read NEUTRAL there and fetch nothing). MAP_CELLS long: every layer a region map can name.
+func slot_table() -> PackedInt32Array:
+	if _table_built != _table_gen:
+		_table = PackedInt32Array()
+		_table.resize(MAP_CELLS)
+		for i in mini(_layers.size(), MAP_CELLS):
+			var loc = _layers[i]
+			if loc != null and _map_layer.has(loc):
+				_table[i] = int(_map_layer[loc]) + 1
+		_table_built = _table_gen
+	return _table
 
 
 ## layer -> region location for Terrain3D's region map (MAP_SIZE^2 cells, value = layer + 1), its window at `origin`: the
@@ -72,8 +121,10 @@ static func layout(p_map: PackedInt32Array, p_origin: Vector2i) -> Dictionary:
 	return out
 
 
-## Re-reads the region map: a new layer count (or `force`) rebuilds the texture, loading every map on the worker pool and
-## waiting; a layer whose region changed (streaming) shows NEUTRAL while its map loads on a worker thread (poll()).
+## Re-reads the region map. The first time (or `force`) builds the array, loading every resident map on the worker pool
+## and waiting. After that a region landing reads NEUTRAL while its map loads on a worker thread (poll() gives it a free
+## layer; no file: none at all), a region leaving gives its layer back, and a region moving to another slot (a terrain
+## without streaming re-packs its layers) only changes slot_table(): no map is sent again.
 func refresh(p_force := false) -> void:
 	if _terrain == null:
 		return
@@ -107,33 +158,129 @@ func refresh(p_force := false) -> void:
 				_dirty.erase(l)
 		if unsaved():
 			_track()
+	if n > MAP_CELLS and not _warned_layers:
+		_warned_layers = true
+		errors.append("the terrain has %d layers; the slot table holds %d, the rest read NEUTRAL" % [n, MAP_CELLS])
+		push_error("[GrassMaps] " + errors[errors.size() - 1])
 	if n == 0:
 		_tex = null
+		_tex_size = 0
+		_cap = 0
 		_layers = []
+		_map_layer.clear()
+		_free.clear()
+		_table_gen += 1
 		changed.emit()
 		return
-	if p_force or _tex == null or n != _layers.size():
-		_load_all(want)
-		var imgs: Array[Image] = []
-		for loc in want:
-			imgs.append(_image_or_neutral(loc))
-		_tex = Texture2DArray.new()
-		_tex.create_from_images(imgs)
-		_layers = want
-		_forget()
-		changed.emit()
+	if p_force or _tex == null or (_cap > 0 and _tex_size != _size):
+		_rebuild(want)
 		return
-	var any := false
-	for i in n:
-		if want[i] != _layers[i]:
-			_layers[i] = want[i]
-			if want[i] != null and not _images.has(want[i]):
-				_start_load(want[i])        # read on a worker thread; NEUTRAL until poll() lands it
-			_tex.update_layer(_held_or_neutral(want[i]), i)
-			any = true
-	if any:
-		_forget()
-		changed.emit()
+	if want == _layers:
+		return
+	var before := {}
+	for l in _layers:
+		if l != null:
+			before[l] = true
+	_layers = want
+	var resident := {}
+	for l in want:
+		if l != null:
+			resident[l] = true
+	for loc in _map_layer.keys():
+		if not resident.has(loc):
+			_free.append(_map_layer[loc])  # left: its layer is free again (nothing sent)
+			_map_layer.erase(loc)
+	for loc in resident:
+		if _map_layer.has(loc) or before.has(loc):
+			continue                       # resident before: in its layer, or loading, or without a map
+		if _images.has(loc):
+			if _mapped.has(loc):
+				_place(loc, _images[loc])  # a held map (the editor's, adopted) back in
+		else:
+			_start_load(loc)               # read on a worker thread; NEUTRAL until poll() places it
+	_table_gen += 1
+	changed.emit()
+
+
+## The first build (and a forced one): every resident map loaded on the worker pool, then an array with room for every
+## map on disk that can be resident at once, allocated now if any map is resident (else when the first one lands).
+func _rebuild(p_want: Array) -> void:
+	_load_all(p_want)
+	_layers = p_want
+	_want_cap = mini(_files_on_disk(), p_want.size())
+	var maps := {}
+	for loc in p_want:
+		if loc != null and _images.has(loc) and _mapped.has(loc):
+			maps[loc] = _images[loc]
+	_build(maps, _want_cap)
+	_forget()
+	changed.emit()
+
+
+## A new array holding `maps` (location -> region-sized RGBA8 Image) with room for `cap` maps in all; the 1x1x1
+## placeholder when there are none. The spare layers repeat the first map (never read: no slot points at them).
+func _build(p_maps: Dictionary, p_cap: int) -> void:
+	_map_layer.clear()
+	_free.clear()
+	var imgs: Array[Image] = []
+	if p_maps.is_empty():
+		_cap = 0
+		_tex_size = 0
+		imgs.append(_placeholder())
+	else:
+		_cap = maxi(p_cap, p_maps.size())
+		_tex_size = _size
+		for loc in p_maps:
+			_map_layer[loc] = imgs.size()
+			imgs.append(p_maps[loc])
+		var spare: Image = imgs[0]
+		for i in range(imgs.size(), _cap):
+			imgs.append(spare)
+		for i in range(_cap - 1, p_maps.size() - 1, -1):
+			_free.append(i)
+	_retired = _tex                    # until the next poll(): the terrain material may still point at it for a frame
+	_tex = Texture2DArray.new()
+	_tex.create_from_images(imgs)
+	_table_gen += 1
+
+
+## A resident region's map into its layer: a free one when it has none yet, the array grown when none is free.
+func _place(p_loc: Vector2i, p_img: Image) -> void:
+	var l: int = _map_layer.get(p_loc, -1)
+	if l >= 0:
+		_tex.update_layer(p_img, l)
+		return
+	if _free.is_empty():
+		_grow(p_loc, p_img)
+		return
+	l = _free.pop_back()
+	_map_layer[p_loc] = l
+	_tex.update_layer(p_img, l)
+	_table_gen += 1
+
+
+## No free layer for a new map (one not on disk at the bind: painted, adopted; or the first map to land): a new array
+## with every resident map, at the bind's size or twice the old one, at most the terrain's layer count. Maps the game no
+## longer holds are read again from their files, on the worker pool.
+func _grow(p_loc: Vector2i, p_img: Image) -> void:
+	var gone: Array = _map_layer.keys().filter(func(l): return not _images.has(l))
+	if not gone.is_empty():
+		_load_all(gone)
+	var maps := {}
+	for loc in _map_layer:
+		if _images.has(loc):
+			maps[loc] = _images[loc]
+	maps[p_loc] = p_img
+	_build(maps, mini(maxi(_want_cap, _cap * 2), maxi(_layers.size(), 1)))
+	_forget()
+
+
+## The map files in this folder: no more maps than these can ever be resident at once.
+func _files_on_disk() -> int:
+	var d := path_for(Vector2i.ZERO).get_base_dir()
+	if d == "" or not DirAccess.dir_exists_absolute(d):
+		return 0
+	return Array(DirAccess.get_files_at(d)).filter(func(f: String) -> bool: return f.ends_with(".res")).size()
 
 
 ## A region's map changed (painted, undone, added): saved on the next save.
@@ -212,14 +359,14 @@ func path_for(p_loc: Vector2i) -> String:
 	return d.path_join(folder).path_join(Terrain3DUtil.location_to_filename(p_loc)) if d != "" else ""
 
 
-## A region's map in the editor (kept): its file's, adopted, or a new NEUTRAL one.
+## A region's map in the editor (kept): its file's, adopted, or a new NEUTRAL one (a map once painted: update_layer).
 func image(p_loc: Vector2i) -> Image:
 	if not _images.has(p_loc):
 		_images[p_loc] = _load(p_loc)
 	return _images[p_loc]
 
 
-## Tests and tools: this image IS the region's map (no file is read for it); its layer updates now if mapped.
+## Tests and tools: this image IS the region's map (no file is read for it); its layer updates now if resident.
 func adopt(p_loc: Vector2i, p_img: Image) -> void:
 	var img := p_img
 	if img.get_format() != Image.FORMAT_RGBA8:
@@ -230,12 +377,17 @@ func adopt(p_loc: Vector2i, p_img: Image) -> void:
 	update_layer(p_loc)
 
 
-## Re-sends a region's layer from its image (after painting).
+## Re-sends a region's layer from its image (after painting). Its image is a map from now on: a resident region that
+## had none gets a layer (the array grows when none is free), one not resident gets it when it lands.
 func update_layer(p_loc: Vector2i) -> void:
-	var i := layer_of(p_loc)
-	if i >= 0 and _tex != null:
-		_tex.update_layer(_image_or_neutral(p_loc), i)
-		changed.emit()
+	if _images.has(p_loc):
+		_mapped[p_loc] = true
+	if layer_of(p_loc) < 0 or _tex == null:
+		return
+	var img := image(p_loc)
+	_mapped[p_loc] = true
+	_place(p_loc, img)
+	changed.emit()
 
 
 func location_of(p_pos: Vector3) -> Vector2i:
@@ -331,22 +483,31 @@ func _q_keep(loc: Vector2i, img: Image) -> void:
 	while _q_order.size() > QUERY_REGIONS:
 		_q_images.erase(_q_order.pop_front())
 
-## Every frame (GrassBlades): the streamed maps that finished loading reach their layers. A map loaded meanwhile on the
-## main thread (painting, saving) wins; a region that streamed out before its map arrived is skipped.
+## Every frame (GrassBlades): the streamed maps that finished loading get a free layer. A map loaded meanwhile on the
+## main thread (painting, saving) wins; a region that streamed out before its map arrived is skipped; a region without
+## a file gets nothing (NEUTRAL: no image, no layer, nothing sent).
 func poll() -> void:
+	_retired = null
 	for loc in _pending.keys():
 		var tid: int = _pending[loc][0]
 		if not _done(tid):
 			continue
 		var img: Image = _pending[loc][1][0]
 		_pending.erase(loc)
-		var i := layer_of(loc)
-		if _images.has(loc) or i < 0 or _tex == null:
+		if layer_of(loc) < 0 or _tex == null:
 			continue
-		img = _checked(img, loc)
-		_tex.update_layer(img, i)
-		if keep_images:
-			_images[loc] = img
+		if _images.has(loc):
+			if not _mapped.has(loc) or _map_layer.has(loc):
+				continue                   # held already: in its layer, or a NEUTRAL stand-in not painted yet
+			img = _images[loc]             # loaded meanwhile on the main thread: that one, still to be placed
+		else:
+			img = _checked(img, loc)
+			if img == null:
+				continue
+			if keep_images:
+				_images[loc] = img
+				_mapped[loc] = true
+		_place(loc, img)
 		changed.emit()
 
 
@@ -374,20 +535,8 @@ func _notification(p_what: int) -> void:
 				WorkerThreadPool.wait_for_task_completion(p[0])
 
 
-func _image_or_neutral(p_loc) -> Image:
-	if p_loc == null:
-		return _neutral()
-	if not _images.has(p_loc):
-		_images[p_loc] = _load(p_loc)
-	return _images[p_loc]
-
-
-## A held map or NEUTRAL; never reads a file (the streaming path).
-func _held_or_neutral(p_loc) -> Image:
-	return _images[p_loc] if p_loc != null and _images.has(p_loc) else _neutral()
-
-
-## Every wanted region not yet held, loaded on the worker threads (a large map loads a hundred files or more).
+## Every wanted region not yet held, loaded on the worker threads (a large map loads a hundred files or more): the
+## ones with a file are held as maps, the others hold nothing (NEUTRAL).
 func _load_all(p_want: Array) -> void:
 	var locs := p_want.filter(func(l): return l != null and not _images.has(l))
 	if locs.is_empty():
@@ -399,17 +548,25 @@ func _load_all(p_want: Array) -> void:
 	if tid < 0:
 		_lost_task("add_group_task refused the bulk load (%d regions); reading them synchronously" % locs.size())
 		for i in locs.size():
-			_images[locs[i]] = _checked(_read_path(paths[i]), locs[i])
-		return
-	WorkerThreadPool.wait_for_group_task_completion(tid)
+			out[i] = _read_path(paths[i])
+	else:
+		WorkerThreadPool.wait_for_group_task_completion(tid)
 	for i in locs.size():
-		_images[locs[i]] = _checked(out[i], locs[i])
+		var img := _checked(out[i], locs[i])
+		if img != null:
+			_images[locs[i]] = img
+			_mapped[locs[i]] = true
 
 
-## A map read on the main thread (the editor's image() of a region not held yet): counted in sync_loads.
+## A map read on the main thread (the editor's image() of a region not held yet): counted in sync_loads. A region
+## without a file gets a new NEUTRAL image to paint, which is no map (no layer) until painted (update_layer).
 func _load(p_loc: Vector2i) -> Image:
 	sync_loads += 1
-	return _checked(_read_path(path_for(p_loc)), p_loc)
+	var img := _checked(_read_path(path_for(p_loc)), p_loc)
+	if img == null:
+		return _neutral()
+	_mapped[p_loc] = true
+	return img
 
 
 ## A file's Image, or null (no file). Static: a worker thread calls it with a path read on the main thread.
@@ -419,10 +576,10 @@ static func _read_path(p_path: String) -> Image:
 	return ResourceLoader.load(p_path, "Image", ResourceLoader.CACHE_MODE_IGNORE) as Image
 
 
-## NEUTRAL for none; RGBA8 at region_size², converting (with an error) what is not.
+## Null for none (no file); RGBA8 at region_size², converting (with an error) what is not.
 func _checked(p_img: Image, p_loc: Vector2i) -> Image:
 	if p_img == null:
-		return _neutral()
+		return null
 	var img := p_img
 	if img.get_format() != Image.FORMAT_RGBA8:
 		img.convert(Image.FORMAT_RGBA8)
@@ -433,8 +590,17 @@ func _checked(p_img: Image, p_loc: Vector2i) -> Image:
 	return img
 
 
+## A new region-sized NEUTRAL image: the editor's map of a region without a file, to paint. The only one made: no layer
+## is ever filled with NEUTRAL (the shaders read the constant).
 func _neutral() -> Image:
 	var img := Image.create_empty(maxi(_size, 1), maxi(_size, 1), false, Image.FORMAT_RGBA8)
+	img.fill(NEUTRAL)
+	return img
+
+
+## The array while no map is resident: one NEUTRAL texel no slot points at (a sampler needs a texture to bind).
+static func _placeholder() -> Image:
+	var img := Image.create_empty(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(NEUTRAL)
 	return img
 
@@ -446,3 +612,4 @@ func _forget() -> void:
 	for loc in _images.keys():
 		if not _adopted.has(loc):
 			_images.erase(loc)
+			_mapped.erase(loc)

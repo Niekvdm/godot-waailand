@@ -21,7 +21,10 @@
 // map holds, drawn on the terrain at every distance (grass_overlay_apply).
 
 uniform bool grass_far_enabled = false;
-uniform highp sampler2DArray grass_maps : repeat_disable;   // GrassMaps (one layer a region layer), GrassMapCodec: R density x 128, G override + 1, B height, A force
+uniform highp sampler2DArray grass_maps : repeat_disable;   // GrassMaps (a layer per map), GrassMapCodec: R density x 128, G override + 1, B height, A force
+// GrassMaps.slot_table (GrassFarField.slot_texture): x = the terrain layer, r = 1 + the layer of grass_maps holding its
+// region's map, 0 where it has none (NEUTRAL, nothing fetched). Unset (black): every region reads NEUTRAL.
+uniform highp sampler2D grass_map_slots : hint_default_black, filter_nearest, repeat_disable;
 uniform float grass_allow[32];                // the terrain rule by texture id (GrassTerrainGrowth)
 uniform vec2 far_ramp = vec2(100.0, 120.0);   // the blades' fade: radius - edge_fade_m .. radius (m)
 uniform vec3 sun_travel_dir = vec3(0.0, -1.0, 0.0);
@@ -60,6 +63,14 @@ uniform float far_carpet_fade = 1500.0;       // m past the blades over which th
 uniform int grass_overlay = 0;                // GrassOverlay.Mode: 0 off, 1 what's painted, 2 density, 3 height
 uniform vec3 grass_overlay_hue[32];           // each slot's tint (GrassOverlay.hues_linear)
 uniform vec3 grass_overlay_key[4];            // removed, forced, less, more (GrassOverlay.key_linear)
+
+const vec4 GRASS_MAP_NEUTRAL = vec4(128.0 / 255.0, 0.0, 128.0 / 255.0, 1.0);   // GrassMaps.NEUTRAL: x1, the ground decides
+
+// The grass map texel at a terrain lookup i (i.z the terrain layer, >= 0), through the slot table.
+vec4 grass_map_texel(ivec3 i) {
+	int l = int(texelFetch(grass_map_slots, ivec2(clamp(i.z, 0, 1023), 0), 0).r + 0.5) - 1;
+	return l < 0 ? GRASS_MAP_NEUTRAL : texelFetch(grass_maps, ivec3(i.xy, l), 0);
+}
 
 // A corner's terrain rule, base and overlay blended: x = its own grass (0 on a "painted only" surface, where
 // GrassTerrainGrowth writes -a), y = what a painted override needs (|a|).
@@ -102,10 +113,10 @@ vec2 far_layer(ivec3 i0, ivec3 i1, ivec3 i2, ivec3 i3, vec4 w, out vec4 p0, out 
 	if (i0.z < 0 || i1.z < 0 || i2.z < 0 || i3.z < 0) {
 		return vec2(0.0);
 	}
-	vec4 g0 = texelFetch(grass_maps, i0, 0);
-	vec4 g1 = texelFetch(grass_maps, i1, 0);
-	vec4 g2 = texelFetch(grass_maps, i2, 0);
-	vec4 g3 = texelFetch(grass_maps, i3, 0);
+	vec4 g0 = grass_map_texel(i0);
+	vec4 g1 = grass_map_texel(i1);
+	vec4 g2 = grass_map_texel(i2);
+	vec4 g3 = grass_map_texel(i3);
 	vec2 c0 = far_corner_allow(i0);
 	vec2 c1 = far_corner_allow(i1);
 	vec2 c2 = far_corner_allow(i2);
@@ -186,7 +197,7 @@ vec3 grass_overlay_apply(ivec3 i0, ivec3 i1, ivec3 i2, ivec3 i3, vec4 w, vec3 wp
 	if (i.z < 0) {
 		return alb;
 	}
-	ivec4 b = ivec4(floor(texelFetch(grass_maps, i, 0) * 255.0 + 0.5));
+	ivec4 b = ivec4(floor(grass_map_texel(i) * 255.0 + 0.5));
 	vec3 col = alb;
 	if (grass_overlay == 1) {
 		if (b.g == 255) {
